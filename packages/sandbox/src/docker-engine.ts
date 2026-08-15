@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import { DockerUnavailableError } from "./errors";
 import type { SandboxContainer, SandboxEngine } from "./run";
+import { resolveDockerSocket } from "./socket";
 import type { ContainerSpec } from "./spec";
 
 export interface DockerContainerHandle {
@@ -57,5 +58,8 @@ export class DockerodeEngine implements SandboxEngine {
 }
 
 function defaultClient(): DockerClient {
-  return new Docker() as unknown as DockerClient;
+  const socketPath = resolveDockerSocket();
+  const docker = socketPath === undefined ? new Docker() : new Docker({ socketPath });
+
+  return docker as unknown as DockerClient;
 }
