@@ -1,5 +1,6 @@
 import { parse } from "yaml";
 import { z } from "zod";
+import { ConfigError } from "./errors";
 
 export type FrontmatterValue = string | string[];
 
@@ -9,6 +10,7 @@ export interface Frontmatter {
 }
 
 const DELIMITER = "---";
+const FIELD_LINE_RE = /^[A-Za-z_][\w-]*\s*:/m;
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 const fieldSchema = z.union([
@@ -31,19 +33,26 @@ export function parseFrontmatter(source: string): Frontmatter {
     return { data: {}, body: source };
   }
 
+  const block = lines.slice(1, closing).join("\n");
+  const parsed = parseYaml(block);
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (FIELD_LINE_RE.test(block)) {
+      throw new ConfigError(
+        "The frontmatter block could not be read as YAML; fix it rather than letting the fields be ignored",
+      );
+    }
+
+    return { data: {}, body: source };
+  }
+
   return {
-    data: toFields(lines.slice(1, closing).join("\n")),
+    data: toFields(parsed),
     body: lines.slice(closing + 1).join("\n"),
   };
 }
 
-function toFields(block: string): Record<string, FrontmatterValue> {
-  const parsed = parseYaml(block);
-
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return {};
-  }
-
+function toFields(parsed: object): Record<string, FrontmatterValue> {
   const data: Record<string, FrontmatterValue> = Object.create(null) as Record<
     string,
     FrontmatterValue

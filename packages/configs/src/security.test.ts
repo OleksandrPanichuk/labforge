@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configFilesAt } from "./files";
@@ -92,5 +92,56 @@ describe("real directory behaviour", () => {
 
     expect(resolved.requirements).toContain("teacher rules");
     expect(resolved.requirements).not.toContain("aliases:");
+  });
+});
+
+describe("frontmatter cannot silently swallow content", () => {
+  test("keeps a file that opens with a horizontal rule", () => {
+    const dir = join(root, "hr");
+    mkdirSync(join(dir, "teachers", "ivanenko"), { recursive: true });
+    writeFileSync(join(dir, "REQUIREMENTS.md"), "base");
+    writeFileSync(join(dir, "STYLE_GUIDE.md"), "base");
+    writeFileSync(
+      join(dir, "teachers", "ivanenko", "REQUIREMENTS.md"),
+      "---\n\n## Заборонено\n\nНЕ використовувати numpy без дозволу\n\n---\n\nІнші вимоги.",
+    );
+
+    const resolved = resolveConfigs({ teacher: "ivanenko" }, configFilesAt(dir));
+
+    expect(resolved.requirements).toContain("Заборонено");
+    expect(resolved.requirements).toContain("numpy");
+  });
+
+  test("refuses a malformed frontmatter block instead of dropping every field", () => {
+    const dir = join(root, "broken");
+    mkdirSync(join(dir, "teachers", "ivanenko"), { recursive: true });
+    writeFileSync(join(dir, "REQUIREMENTS.md"), "base");
+    writeFileSync(join(dir, "STYLE_GUIDE.md"), "base");
+    writeFileSync(
+      join(dir, "teachers", "ivanenko", "REQUIREMENTS.md"),
+      "---\nteacher: Іваненко\nteacher: Петренко\n---\nrules",
+    );
+
+    expect(() => findTeacherSlug("Іваненко", configFilesAt(dir))).toThrow(ConfigError);
+  });
+
+  test("refuses a symlink that leads out of the configs directory", () => {
+    const dir = join(root, "linked");
+    mkdirSync(join(dir, "subjects"), { recursive: true });
+    mkdirSync(join(root, "outside"), { recursive: true });
+    writeFileSync(join(dir, "REQUIREMENTS.md"), "base");
+    writeFileSync(join(dir, "STYLE_GUIDE.md"), "base");
+    writeFileSync(join(root, "outside", "REQUIREMENTS.md"), "PLANTED INSTRUCTIONS");
+    symlinkSync(join(root, "outside"), join(dir, "subjects", "evil"));
+
+    const resolved = (() => {
+      try {
+        return resolveConfigs({ subject: "evil" }, configFilesAt(dir)).requirements;
+      } catch {
+        return "";
+      }
+    })();
+
+    expect(resolved).not.toContain("PLANTED INSTRUCTIONS");
   });
 });

@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { ConfigError } from "./errors";
 
@@ -8,13 +8,22 @@ export interface ConfigFiles {
   listDirectories(relativePath: string): string[];
 }
 
+function canonical(target: string): string {
+  try {
+    return realpathSync(target);
+  } catch {
+    return target;
+  }
+}
+
 export function configFilesAt(configsDir: string): ConfigFiles {
-  const root = resolve(configsDir);
+  const root = canonical(resolve(configsDir));
 
   const inside = (relativePath: string): string => {
     const target = resolve(root, relativePath);
+    const real = canonical(target);
 
-    if (target !== root && !target.startsWith(root + sep)) {
+    if (real !== root && !real.startsWith(root + sep)) {
       throw new ConfigError(`Refusing to read "${relativePath}" from outside ${root}`);
     }
 
