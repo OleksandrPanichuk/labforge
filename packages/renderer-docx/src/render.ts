@@ -11,7 +11,13 @@ import {
   type Table,
   TextRun,
 } from "docx";
-import { type BlockContext, ORDERED_LIST_REFERENCE, renderList, renderTable } from "./blocks";
+import {
+  type BlockContext,
+  createListInstances,
+  ORDERED_LIST_REFERENCE,
+  renderList,
+  renderTable,
+} from "./blocks";
 import { textRunsOf } from "./runs";
 import { mmToTwips, paragraphOptionsOf, runOptionsOf, styleIdOf } from "./styles";
 
@@ -52,8 +58,14 @@ export function buildDocument(ir: ReportIR): Document {
   });
 }
 
+function renderBlocks(ir: ReportIR): (Paragraph | Table)[] {
+  const context = blockContext(ir);
+
+  return ir.blocks.flatMap((block) => renderBlock(block, context));
+}
+
 function blockContext(ir: ReportIR): BlockContext {
-  return { values: ir.values, styles: ir.styles };
+  return { values: ir.values, styles: ir.styles, listInstance: createListInstances() };
 }
 
 function section(ir: ReportIR): ISectionOptions {
@@ -75,7 +87,7 @@ function section(ir: ReportIR): ISectionOptions {
       },
     },
     footers: ir.page.pageNumbers ? { default: pageNumberFooter() } : undefined,
-    children: ir.blocks.flatMap((block) => renderBlock(block, blockContext(ir))),
+    children: renderBlocks(ir),
   };
 }
 

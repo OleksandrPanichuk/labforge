@@ -153,3 +153,55 @@ describe("tables", () => {
     expect(xml).toContain("3,20e-6");
   });
 });
+
+describe("documents with several blocks of the same kind", () => {
+  test("restarts numbering for a second ordered list", async () => {
+    const blocks: Block[] = [
+      { id: "blk_1", type: "list", ordered: true, items: ["a", "b"] },
+      { id: "blk_2", type: "paragraph", text: "between" },
+      { id: "blk_3", type: "list", ordered: true, items: ["c", "d"] },
+    ];
+
+    const xml = await documentXml(blocks);
+    const numIds = [...xml.matchAll(/<w:numId w:val="(\d+)"/g)].map((match) => match[1]);
+
+    expect(new Set(numIds).size).toBe(2);
+  });
+
+  test("keeps two adjacent tables apart so Word does not merge them", async () => {
+    const rows: Block = {
+      id: "blk_1",
+      type: "table",
+      header: ["x"],
+      rows: [["1"]],
+    };
+
+    const xml = await documentXml([rows, { ...rows, id: "blk_2" }]);
+
+    expect(xml).not.toContain("</w:tbl><w:tbl>");
+  });
+
+  test("does not end the document body with a bare table", async () => {
+    const xml = await documentXml([{ id: "blk_1", type: "table", header: ["x"], rows: [["1"]] }]);
+
+    expect(xml).not.toMatch(/<\/w:tbl><w:sectPr/);
+  });
+
+  test("pads a row that has fewer cells than the header", async () => {
+    const xml = await documentXml([
+      { id: "blk_1", type: "table", header: ["x", "y"], rows: [["only"]] },
+    ]);
+
+    const cells = [...xml.matchAll(/<w:tc>/g)].length;
+
+    expect(cells).toBe(4);
+  });
+
+  test("drops cells a row has beyond the header width", async () => {
+    const xml = await documentXml([
+      { id: "blk_1", type: "table", header: ["x"], rows: [["a", "b", "c"]] },
+    ]);
+
+    expect([...xml.matchAll(/<w:tc>/g)].length).toBe(2);
+  });
+});

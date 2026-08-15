@@ -24,21 +24,39 @@ const TABLE_BORDERS = {
   insideVertical: CELL_BORDER,
 };
 
+export interface ListInstances {
+  next(): number;
+}
+
+export function createListInstances(): ListInstances {
+  let issued = 0;
+
+  return {
+    next() {
+      issued += 1;
+      return issued;
+    },
+  };
+}
+
 export interface BlockContext {
   values: Record<string, ValueEntry>;
   styles: Record<string, StyleDef>;
+  listInstance: ListInstances;
 }
 
 export function renderList(
   block: Extract<Block, { type: "list" }>,
   context: BlockContext,
 ): Paragraph[] {
+  const instance = block.ordered ? context.listInstance.next() : 0;
+
   return block.items.map(
     (item) =>
       new Paragraph({
         style: block.style,
         ...(block.ordered
-          ? { numbering: { reference: ORDERED_LIST_REFERENCE, level: 0 } }
+          ? { numbering: { reference: ORDERED_LIST_REFERENCE, level: 0, instance } }
           : { bullet: { level: 0 } }),
         children: textRunsOf(item, context.values),
       }),
@@ -51,6 +69,7 @@ export function renderTable(
 ): (Paragraph | Table)[] {
   const caption = block.caption === undefined ? [] : [captionParagraph(block.caption, context)];
 
+  const width = block.header.length;
   const header = new TableRow({
     tableHeader: true,
     children: block.header.map((cell, column) => tableCell(cell, column, block, context)),
@@ -59,7 +78,7 @@ export function renderTable(
   const body = block.rows.map(
     (row) =>
       new TableRow({
-        children: row.map((cell, column) => tableCell(cell, column, block, context)),
+        children: fit(row, width).map((cell, column) => tableCell(cell, column, block, context)),
       }),
   );
 
@@ -70,7 +89,18 @@ export function renderTable(
       borders: TABLE_BORDERS,
       rows: [header, ...body],
     }),
+    new Paragraph({}),
   ];
+}
+
+function fit(row: string[], width: number): string[] {
+  const cells = row.slice(0, width);
+
+  while (cells.length < width) {
+    cells.push("");
+  }
+
+  return cells;
 }
 
 function captionParagraph(caption: string, context: BlockContext): Paragraph {
