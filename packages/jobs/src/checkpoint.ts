@@ -33,6 +33,7 @@ export const checkpointSchema = z.object({
   cycles: z.record(z.enum(JOB_STATES), z.number().int().positive()).default({}),
   sessionIds: z.record(z.string(), z.string()).default({}),
   lastError: z.string().optional(),
+  lastFindings: z.array(z.string()).optional(),
   resumeAt: z.string().optional(),
 });
 
