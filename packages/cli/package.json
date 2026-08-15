@@ -1,0 +1,26 @@
+{
+  "name": "@labforge/cli",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@labforge/agent": "workspace:*",
+    "@labforge/configs": "workspace:*",
+    "@labforge/ingest": "workspace:*",
+    "@labforge/jobs": "workspace:*",
+    "@labforge/logger": "workspace:*",
+    "@labforge/orchestrator": "workspace:*",
+    "@labforge/pipeline": "workspace:*",
+    "@labforge/resolver": "workspace:*",
+    "@labforge/sandbox": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  }
+}
