@@ -1,9 +1,27 @@
 # @labforge/renderer-docx
 
 Детермінований рендер Report IR → `.docx` на бібліотеці `docx`
-(docs/labforge-architecture.md §8). Реалізація — Фаза 1.
+(docs/labforge-architecture.md §8). Той самий IR, з якого рендериться превʼю, —
+жодного шляху "з HTML у docx" не існує (інваріант 2).
 
-Формули: LaTeX → MathML (`temml`) → OMML; fallback для неконвертованих —
-KaTeX → PNG 300 dpi.
+```ts
+const buffer = await renderReport(ir);
+```
 
-Golden-тести (fixture IR → snapshot XML) обовʼязкові до мержа (CLAUDE.md).
+## Що вже вміє
+
+- Сторінка: A4 і поля з `ir.page` (мм → twips з округленням до канонічних розмірів Word:
+  11906 × 16838, а не 11905 × 16837, які дає хелпер `docx`).
+- Нумерація сторінок у футері — коли `page.pageNumbers`.
+- Стилі: `styles.default` йде в `docDefaults`, решта — іменовані paragraph-стилі,
+  на які блоки посилаються через `block.style`.
+- Інлайн-розмітка: `b i u sub sup span[data-x]` → окремі runs; `{{v:key}}` підставляється
+  з `values`. Незаповнене значення — `UnresolvedValueError`, а не порожнє місце в звіті.
+- Блоки: `heading` (з `outlineLvl`, щоб працювала навігація Word) і `paragraph`.
+
+Далі (окремими PR): списки й таблиці, зображення й лістинги коду, формули.
+
+## Тести
+
+Golden-тест знімає `word/document.xml` (розпаковується через `fflate`) — саме ця частина
+детермінована, на відміну від усього архіву, куди `docx` пише час створення.
