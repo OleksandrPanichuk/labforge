@@ -36,6 +36,10 @@ export function mmToTwips(millimetres: number): number {
   return Math.round((millimetres * TWIPS_PER_INCH) / MM_PER_INCH);
 }
 
+export function styleIdOf(name: string): string {
+  return `lf-${name}`;
+}
+
 export function runOptionsOf(style: StyleDef): IRunOptions {
   return {
     ...(style.font !== undefined && { font: style.font }),

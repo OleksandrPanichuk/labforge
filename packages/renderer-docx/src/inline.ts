@@ -32,6 +32,7 @@ const ENTITIES: Record<string, string> = {
 
 const TOKEN_RE = /<\/?([a-zA-Z][a-zA-Z0-9-]*)([^>]*)>/g;
 const PLACEHOLDER_RE = /\{\{v:([\w-]+)\}\}/g;
+const PLACEHOLDER_START_RE = /\{\{\s*v\s*:/;
 const DATA_X_RE = /data-x="([\w-]+)"/;
 
 interface OpenTag {
@@ -130,7 +131,7 @@ function formatting(stack: OpenTag[]): Omit<InlineRun, "text"> {
 }
 
 function substitute(raw: string, values: Record<string, ValueEntry>): string {
-  return raw.replace(new RegExp(PLACEHOLDER_RE.source, "g"), (_match, key: string) => {
+  const substituted = raw.replace(new RegExp(PLACEHOLDER_RE.source, "g"), (_match, key: string) => {
     const resolved = values[key]?.value;
 
     if (resolved === undefined) {
@@ -139,6 +140,14 @@ function substitute(raw: string, values: Record<string, ValueEntry>): string {
 
     return resolved;
   });
+
+  if (PLACEHOLDER_START_RE.test(substituted)) {
+    throw new InlineMarkupError(
+      `Malformed value placeholder in "${raw}"; a key may only contain letters, digits, _ and -`,
+    );
+  }
+
+  return substituted;
 }
 
 function decodeEntities(text: string): string {

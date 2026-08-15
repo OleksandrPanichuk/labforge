@@ -10,7 +10,7 @@ import {
   TextRun,
 } from "docx";
 import { type InlineRun, parseInline } from "./inline";
-import { mmToTwips, paragraphOptionsOf, runOptionsOf } from "./styles";
+import { mmToTwips, paragraphOptionsOf, runOptionsOf, styleIdOf } from "./styles";
 
 export type DocumentPart = "document" | "styles" | "footer1";
 
@@ -81,7 +81,7 @@ function namedStyles(ir: ReportIR) {
   return Object.entries(ir.styles)
     .filter(([name]) => name !== DEFAULT_STYLE)
     .map(([name, definition]) => ({
-      id: name,
+      id: styleIdOf(name),
       name,
       basedOn: "Normal",
       quickFormat: true,
@@ -92,13 +92,13 @@ function namedStyles(ir: ReportIR) {
 
 function renderBlock(block: Block, values: Record<string, ValueEntry>): Paragraph[] {
   if (block.type === "paragraph") {
-    return [new Paragraph({ style: block.style, children: runsOf(block.text, values) })];
+    return [new Paragraph({ style: styleRef(block.style), children: runsOf(block.text, values) })];
   }
 
   if (block.type === "heading") {
     return [
       new Paragraph({
-        style: block.style,
+        style: styleRef(block.style),
         outlineLevel: block.level - 1,
         children: runsOf(block.text, values),
       }),
@@ -106,6 +106,10 @@ function renderBlock(block: Block, values: Record<string, ValueEntry>): Paragrap
   }
 
   return [];
+}
+
+function styleRef(style: string | undefined): string | undefined {
+  return style === undefined ? undefined : styleIdOf(style);
 }
 
 function runsOf(text: string, values: Record<string, ValueEntry>): TextRun[] {

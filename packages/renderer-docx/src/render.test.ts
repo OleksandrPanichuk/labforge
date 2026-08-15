@@ -91,7 +91,7 @@ describe("paragraphs and headings", () => {
 
     const xml = await partOf(ir);
 
-    expect(xml).toContain('w:val="caption"');
+    expect(xml).toContain('w:val="lf-caption"');
   });
 
   test("gives headings an outline level so Word can navigate them", async () => {
@@ -114,7 +114,7 @@ describe("styles part", () => {
 
     const xml = await partOf(ir, "styles");
 
-    expect(xml).toContain('w:styleId="heading1"');
+    expect(xml).toContain('w:styleId="lf-heading1"');
   });
 
   test("puts the default style in the document defaults", async () => {
@@ -137,4 +137,43 @@ test("the rendered document.xml stays stable", async () => {
   });
 
   expect(await partOf(ir)).toMatchSnapshot();
+});
+
+describe("output the document cannot silently corrupt", () => {
+  test("refuses a placeholder whose key the substitution cannot match", () => {
+    const ir = makeIR({
+      blocks: [{ id: "blk_1", type: "paragraph", text: "sigma is {{v:sigma.max}}" }],
+    });
+
+    expect(renderReport(ir)).rejects.toThrow(/\{\{v:|placeholder/i);
+  });
+
+  test("refuses a half-written placeholder rather than printing it", () => {
+    const ir = makeIR({ blocks: [{ id: "blk_1", type: "paragraph", text: "x = {{v:a} y" }] });
+
+    expect(renderReport(ir)).rejects.toThrow(/placeholder/i);
+  });
+
+  test("does not emit two styles with the same id when a style is named like a built-in", async () => {
+    const ir = makeIR({
+      styles: { default: { size: 14 }, Heading1: { bold: true } },
+      blocks: [{ id: "blk_1", type: "heading", level: 1, style: "Heading1", text: "GOAL" }],
+    });
+
+    const xml = await partOf(ir, "styles");
+    const ids = [...xml.matchAll(/w:styleId="([^"]+)"/g)].map((match) => match[1]);
+
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("still applies a style named like a built-in to its block", async () => {
+    const ir = makeIR({
+      styles: { default: { size: 14 }, Heading1: { bold: true } },
+      blocks: [{ id: "blk_1", type: "heading", level: 1, style: "Heading1", text: "GOAL" }],
+    });
+
+    const xml = await partOf(ir);
+
+    expect(xml).toMatch(/<w:pStyle w:val="[^"]+"/);
+  });
 });

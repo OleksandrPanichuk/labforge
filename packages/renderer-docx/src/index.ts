@@ -12,4 +12,5 @@ export {
   ptToHalfPoints,
   ptToTwips,
   runOptionsOf,
+  styleIdOf,
 } from "./styles";
