@@ -72,7 +72,7 @@ plus `PAUSED_RATE_LIMIT`, `PAUSED_WAITING_USER`, `FAILED`, `CANCELLED` — reach
 
 ## Phases and acceptance criteria
 
-**Phase 0 — preprocessing.** Script `bun run ingest:pdf <file>` → md in `data/`. Skeleton `configs/` with base REQUIREMENTS.md and STYLE_GUIDE.md (stubs, the owner fills them in).
+**Phase 0 — preprocessing.** Script `bun run ingest <file...>` → md in `data/` (PDF, .docx and text). Skeleton `configs/` with base REQUIREMENTS.md and STYLE_GUIDE.md (stubs, the owner fills them in).
 ✅ An arbitrary methodology PDF converts into readable md.
 
 **Phase 1 — core without the web.** packages/ir + resolver + sandbox + state machine + the condensed flow (Scout+Solver → Reviewer+Fixer → ReportWriter self-review) through the Agent SDK. Entry point: `bun run lab:run <path-to-task-file> --subject X --teacher Y`. Output: `jobs/<id>/` with `src/`, `report.ir.json` (resolved), `report.docx`.

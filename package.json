@@ -23,9 +23,5 @@
     "@types/node": "^26.2.0",
     "turbo": "^2.10.10",
     "typescript": "^5.9"
-  },
-  "dependencies": {
-    "fflate": "^0.8.3",
-    "unpdf": "^1.8.1"
   }
 }
