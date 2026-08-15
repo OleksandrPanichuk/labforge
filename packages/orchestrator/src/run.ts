@@ -102,7 +102,7 @@ function apply(job: Job, decision: Decision): RunResult | undefined {
 
   note(job, { resumeAt: decision.resumeAt, lastError: decision.reason });
 
-  if (decision.state === "PAUSED_WAITING_USER") {
+  if (decision.escalated === true) {
     clearLoop(job);
   }
 

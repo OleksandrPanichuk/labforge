@@ -29,6 +29,7 @@ export type Decision =
       question?: string;
       resumeAt?: string;
       reason?: string;
+      escalated?: boolean;
     }
   | { kind: "fail"; reason: string }
   | { kind: "finished" };
@@ -135,6 +136,7 @@ function escalate(reason: string, blocking: Finding[]): Decision {
     kind: "pause",
     state: "PAUSED_WAITING_USER",
     reason,
+    escalated: true,
     question: `${reason}. Please look at: ${listed}`,
   };
 }
