@@ -1,0 +1,16 @@
+{
+  "name": "@labforge/renderer-docx",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@labforge/ir": "workspace:*",
+    "docx": "^9.7.1",
+    "temml": "^0.13.4"
+  }
+}

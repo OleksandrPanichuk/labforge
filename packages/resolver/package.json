@@ -1,0 +1,15 @@
+{
+  "name": "@labforge/resolver",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@labforge/ir": "workspace:*",
+    "@labforge/sandbox": "workspace:*"
+  }
+}
