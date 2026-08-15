@@ -154,10 +154,18 @@ describe("deterministic states", () => {
 
     expect(outcome.status).toBe("completed");
     expect(agents.visited).toEqual([]);
-    expect(existsSync(join(job.dir, "report.docx"))).toBe(true);
+    expect(JSON.parse(readFileSync(job.reportPath, "utf8")).values.err_max.value).toBe("1");
   });
 
-  test("reports a failed cell as a finding the fixer can act on", async () => {
+  test("does not ship a document before the student has reviewed it", async () => {
+    writeFileSync(job.reportPath, JSON.stringify(document));
+
+    await dispatcher(agent()).run(ask("RESOLVE"));
+
+    expect(existsSync(join(job.dir, "report.docx"))).toBe(false);
+  });
+
+  test("sends a failed cell back to the fixer instead of killing the job", async () => {
     writeFileSync(job.reportPath, JSON.stringify(document));
     const failing = createDispatcher({
       agent: agent(),
@@ -175,14 +183,51 @@ describe("deterministic states", () => {
 
     expect(outcome.status).toBe("failed");
     expect(outcome.error).toContain("boom");
+    expect(outcome.fixIn).toBe("FIX");
   });
 
-  test("builds the document again after a human review", async () => {
+  test("builds the document from the numbers the student reviewed", async () => {
     writeFileSync(job.reportPath, JSON.stringify(document));
+    await dispatcher(agent()).run(ask("RESOLVE"));
 
+    const before = readFileSync(job.reportPath, "utf8");
     const outcome = await dispatcher(agent()).run(ask("BUILD"));
 
     expect(outcome.status).toBe("completed");
+    expect(existsSync(join(job.dir, "report.docx"))).toBe(true);
+    expect(readFileSync(job.reportPath, "utf8")).toBe(before);
+  });
+
+  test("does not run the cells again when building", async () => {
+    writeFileSync(job.reportPath, JSON.stringify(document));
+    await dispatcher(agent()).run(ask("RESOLVE"));
+
+    let ran = 0;
+    const counting = createDispatcher({
+      agent: agent(),
+      configsDir,
+      taskPath: join(root, "task.md"),
+      subject: "nm",
+      runtime: RUNTIMES.python,
+      cells: {
+        run: () => {
+          ran += 1;
+
+          return Promise.resolve({ exitCode: 0, stdout: "{}", stderr: "", durationMs: 1 });
+        },
+      },
+    });
+
+    await counting.run(ask("BUILD"));
+
+    expect(ran).toBe(0);
+  });
+
+  test("refuses a state nobody handles rather than crashing the machine", async () => {
+    const outcome = await dispatcher(agent()).run(ask("HUMAN_REVIEW"));
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toContain("HUMAN_REVIEW");
   });
 });
 

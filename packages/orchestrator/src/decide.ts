@@ -19,6 +19,7 @@ export interface AgentOutcome {
   question?: string;
   resumeAt?: string;
   error?: string;
+  fixIn?: JobState;
 }
 
 export type Decision =
@@ -59,7 +60,7 @@ export function decide(checkpoint: Checkpoint, outcome: AgentOutcome): Decision 
   }
 
   if (outcome.status === "failed") {
-    return { kind: "fail", reason: outcome.error ?? "the agent reported a failure" };
+    return repair(checkpoint, outcome);
   }
 
   if (outcome.status === "rate_limited") {
@@ -77,6 +78,27 @@ export function decide(checkpoint: Checkpoint, outcome: AgentOutcome): Decision 
   const review = REVIEWS[checkpoint.state];
 
   return review === undefined ? straightOn(checkpoint) : afterReview(checkpoint, review, outcome);
+}
+
+function repair(checkpoint: Checkpoint, outcome: AgentOutcome): Decision {
+  const reason = outcome.error ?? "the agent reported a failure";
+  const target = outcome.fixIn;
+
+  if (target === undefined) {
+    return { kind: "fail", reason };
+  }
+
+  if ((checkpoint.cycles[target] ?? 0) >= MAX_REVIEW_CYCLES) {
+    return {
+      kind: "pause",
+      state: "PAUSED_WAITING_USER",
+      escalated: true,
+      reason,
+      question: `${target} has run ${MAX_REVIEW_CYCLES} times and the build still fails: ${reason}`,
+    };
+  }
+
+  return { kind: "advance", state: target };
 }
 
 export function blockingFindings(findings: Finding[] = []): Finding[] {

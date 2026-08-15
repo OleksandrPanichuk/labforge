@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { claudeSession, createAgentRunner } from "@labforge/agent";
-import { createJobStore, type JobState } from "@labforge/jobs";
+import { createJobStore, JOB_STATES, type JobState } from "@labforge/jobs";
 import { createLogger, type Logger, withContext } from "@labforge/logger";
 import { type RunResult, runJob } from "@labforge/orchestrator";
 import { DockerodeEngine, type Runtime, runInSandbox, runtimeFor } from "@labforge/sandbox";
@@ -65,22 +65,22 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
     subject: flags.get("subject"),
     teacher: flags.get("teacher"),
     language: flags.get("language") ?? DEFAULTS.language,
-    jobId: flags.get("job") ?? `${slug(basename(taskPath))}-${now()}`,
+    jobId: flags.get("job") ?? `lab-${slug(basename(taskPath))}-${now()}`,
     jobsDir: flags.get("jobs-dir") ?? DEFAULTS.jobsDir,
     configsDir: flags.get("configs-dir") ?? DEFAULTS.configsDir,
     agentsDir: flags.get("agents-dir") ?? DEFAULTS.agentsDir,
-    stopBefore: (flags.get("stop-before") as JobState | undefined) ?? DEFAULTS.stopBefore,
+    stopBefore: stopBefore(flags.get("stop-before")),
   };
 }
 
 export async function labRun(options: LabRunOptions): Promise<RunResult> {
-  if (!existsSync(options.taskPath)) {
-    throw new Error(`No task file at ${options.taskPath}`);
-  }
-
   const runtime = runtimeFor(options.language);
   const store = createJobStore(options.jobsDir);
   const job = store.openJob(options.jobId, { create: true });
+
+  if (job.readCheckpoint()?.state === "INGEST" && !existsSync(options.taskPath)) {
+    throw new Error(`No task file at ${options.taskPath}`);
+  }
   const logger = withContext(options.logger ?? createLogger({ service: "cli" }), {
     jobId: job.id,
   });
@@ -118,9 +118,25 @@ export function cellRunner(jobDir: string, runtime: Runtime) {
   };
 }
 
+function stopBefore(value: string | undefined): JobState {
+  if (value === undefined) {
+    return DEFAULTS.stopBefore;
+  }
+
+  if (!(JOB_STATES as readonly string[]).includes(value)) {
+    throw new Error(`--stop-before must be one of: ${JOB_STATES.join(", ")}`);
+  }
+
+  return value as JobState;
+}
+
 function slug(name: string): string {
-  return name
+  const ascii = name
     .replace(/\.[^.]+$/, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .replace(/-+$/, "");
+
+  return ascii === "" ? "job" : ascii;
 }

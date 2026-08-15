@@ -1,16 +1,34 @@
+import { join } from "node:path";
 import { createLogger } from "@labforge/logger";
 import { labRun, parseArgs } from "./lab-run";
 
 const logger = createLogger({ service: "cli" });
 
-async function main(): Promise<number> {
-  const result = await labRun(parseArgs(process.argv.slice(2)));
+const EXIT = { done: 0, failed: 1, paused: 2 };
 
-  if (result.question !== undefined) {
-    logger.warn({ question: result.question }, "the lab needs an answer before it can go on");
+async function main(): Promise<number> {
+  const options = parseArgs(process.argv.slice(2));
+  const result = await labRun(options);
+  const jobDir = join(options.jobsDir, options.jobId);
+
+  if (result.state === "FAILED") {
+    logger.error({ jobDir, reason: result.reason }, "the lab failed");
+
+    return EXIT.failed;
   }
 
-  return result.state === "FAILED" ? 1 : 0;
+  if (result.state.startsWith("PAUSED")) {
+    logger.warn(
+      { jobDir, question: result.question, resumeAt: result.resumeAt, reason: result.reason },
+      "the lab is waiting; run the same command again to continue",
+    );
+
+    return EXIT.paused;
+  }
+
+  logger.info({ jobDir, report: join(jobDir, "report.docx") }, "the lab is ready for review");
+
+  return EXIT.done;
 }
 
 main()
@@ -19,5 +37,5 @@ main()
   })
   .catch((error: unknown) => {
     logger.fatal(error instanceof Error ? error.message : String(error));
-    process.exit(1);
+    process.exit(EXIT.failed);
   });

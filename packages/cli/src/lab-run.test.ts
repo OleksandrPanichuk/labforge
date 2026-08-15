@@ -21,7 +21,21 @@ describe("parseArgs", () => {
   });
 
   test("names the job after the task so a directory is recognisable", () => {
-    expect(parseArgs(["data/Лабораторна 3.md"], now).jobId).toBe("лабораторна-3-1000");
+    expect(parseArgs(["data/lab-3.md"], now).jobId).toBe("lab-lab-3-1000");
+  });
+
+  test("keeps a job id the store will accept even for a ukrainian filename", () => {
+    const id = parseArgs(["data/Лабораторна 3.md"], now).jobId;
+
+    expect(id).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+  });
+
+  test("still produces a usable id when the name has nothing to keep", () => {
+    expect(parseArgs(["data/!!!.md"], now).jobId).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+  });
+
+  test("refuses a stop state that is not a state", () => {
+    expect(() => parseArgs(["t.md", "--stop-before", "human-review"], now)).toThrow(/stop-before/);
   });
 
   test("stops before the human review by default", () => {

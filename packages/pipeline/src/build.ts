@@ -36,10 +36,13 @@ export class BuildError extends Error {
   }
 }
 
+export type BuildMode = "full" | "resolve" | "render";
+
 export interface BuildRequest {
   job: Job;
   cells: CellRunner;
   decimalSeparator?: string;
+  mode?: BuildMode;
 }
 
 export interface BuildResult {
@@ -51,10 +54,18 @@ export interface BuildResult {
 
 export async function buildReport(request: BuildRequest): Promise<BuildResult> {
   const { job } = request;
+  const mode = request.mode ?? "full";
   const docxPath = join(job.dir, DOCX_FILE);
   const document = readReport(job.reportPath);
   const pending = generatedArtifacts(document);
   const warnings: ValidationIssue[] = [];
+
+  if (mode === "render") {
+    check(document, "verify", { phase: "post-resolve", files: jobProbe(job.dir) });
+    writeAtomically(docxPath, await render(document, job.dir));
+
+    return { docxPath, ir: document, runs: [], warnings };
+  }
 
   try {
     warnings.push(
@@ -80,10 +91,13 @@ export async function buildReport(request: BuildRequest): Promise<BuildResult> {
 
     check(resolved.ir, "verify", { phase: "post-resolve", files: jobProbe(job.dir) });
 
-    const docx = await render(resolved.ir, job.dir);
+    const docx = mode === "full" ? await render(resolved.ir, job.dir) : undefined;
 
     writeAtomically(job.reportPath, `${JSON.stringify(resolved.ir, null, 2)}\n`);
-    writeAtomically(docxPath, docx);
+
+    if (docx !== undefined) {
+      writeAtomically(docxPath, docx);
+    }
 
     return { docxPath, ir: resolved.ir, runs: resolved.runs, warnings: dedupe(warnings) };
   } catch (error) {

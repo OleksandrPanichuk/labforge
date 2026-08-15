@@ -18,16 +18,38 @@ export interface DispatcherOptions {
   cells: CellRunner;
 }
 
-const DETERMINISTIC = new Set(["INGEST", "RESOLVE", "BUILD"]);
+const AGENT_STATES = new Set([
+  "CONTEXT",
+  "SOLVE",
+  "CODE_REVIEW",
+  "FIX",
+  "IR_WRITE",
+  "IR_FIX",
+  "REPORT_REVIEW",
+  "DEFENSE_PREP",
+  "REVISION",
+]);
 
 export function createDispatcher(options: DispatcherOptions): AgentRunner {
   return {
     run(request: AgentRequest): Promise<AgentOutcome> {
-      if (!DETERMINISTIC.has(request.state)) {
+      if (AGENT_STATES.has(request.state)) {
         return options.agent.run(request);
       }
 
-      return request.state === "INGEST" ? ingest(options, request) : build(options, request);
+      if (request.state === "INGEST") {
+        return ingest(options, request);
+      }
+
+      if (request.state === "RESOLVE" || request.state === "BUILD") {
+        return build(options, request);
+      }
+
+      return Promise.resolve({
+        status: "failed",
+        sessionId: "",
+        error: `No handler for state ${request.state}`,
+      });
     },
   };
 }
@@ -80,14 +102,23 @@ function writeContext(options: DispatcherOptions, job: Job): void {
 
 async function build(options: DispatcherOptions, request: AgentRequest): Promise<AgentOutcome> {
   try {
-    await buildReport({ job: request.job, cells: options.cells });
+    await buildReport({
+      job: request.job,
+      cells: options.cells,
+      mode: request.state === "RESOLVE" ? "resolve" : "render",
+    });
 
     return { status: "completed", sessionId: "" };
   } catch (error) {
+    if (!(error instanceof BuildError)) {
+      return { status: "failed", sessionId: "", error: String(error) };
+    }
+
     return {
       status: "failed",
       sessionId: "",
-      error: error instanceof BuildError ? `${error.stage}: ${error.message}` : String(error),
+      error: `${error.stage}: ${error.message}`,
+      fixIn: error.stage === "resolve" ? "FIX" : "IR_FIX",
     };
   }
 }

@@ -1,5 +1,6 @@
 export {
   BuildError,
+  type BuildMode,
   type BuildRequest,
   type BuildResult,
   type BuildStage,

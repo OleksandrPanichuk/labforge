@@ -109,9 +109,15 @@ test.skipIf(!dockerAvailable)(
       },
     });
 
-    const result = await runJob({ job, agents, stopBefore: "HUMAN_REVIEW" });
+    const paused = await runJob({ job, agents, stopBefore: "HUMAN_REVIEW" });
 
-    expect(result.state).toBe("HUMAN_REVIEW");
+    expect(paused.state).toBe("HUMAN_REVIEW");
+    expect(existsSync(join(job.dir, "report.docx"))).toBe(false);
+
+    job.advanceTo("BUILD");
+    const result = await runJob({ job, agents });
+
+    expect(result.state).toBe("DONE");
 
     expect(readFileSync(join(job.dir, "task.md"), "utf8")).toContain("Обчислити");
     expect(readFileSync(join(job.dir, "context", "requirements.md"), "utf8")).toContain("base");
