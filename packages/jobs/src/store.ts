@@ -1,17 +1,30 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeSync,
+} from "node:fs";
 import { join, resolve, sep } from "node:path";
 import {
   type Checkpoint,
+  canLeave,
   checkpointSchema,
   initialCheckpoint,
   type JobState,
   withState,
 } from "./checkpoint";
-import { type JobGit, jobGitAt } from "./git";
+import { type JobGit, jobGitAt, readCommittedFile } from "./git";
 
 export const JOB_DIRECTORIES = ["src", "cells", "artifacts", "runs", "context", "review"] as const;
 
 export const CHECKPOINT_FILE = "checkpoint.json";
+export const LOCK_FILE = "checkpoint.lock";
 export const REPORT_FILE = "report.ir.json";
 
 const JOB_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -63,7 +76,10 @@ export function createJobStore(jobsRoot: string): JobStore {
         return prepare(root, jobId, initialCheckpoint(jobId));
       }
 
-      return job(dir, jobId);
+      const existing = job(dir, jobId);
+      existing.git.init();
+
+      return existing;
     },
     listJobs() {
       if (!existsSync(root)) {
@@ -73,6 +89,7 @@ export function createJobStore(jobsRoot: string): JobStore {
       return readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name)
+        .filter((name) => existsSync(join(root, name, CHECKPOINT_FILE)))
         .sort();
     },
   };
@@ -95,15 +112,35 @@ function prepare(root: string, jobId: string, checkpoint: Checkpoint): Job {
 
 function job(dir: string, jobId: string): Job {
   const checkpointPath = join(dir, CHECKPOINT_FILE);
+  const lockPath = join(dir, LOCK_FILE);
   const git = jobGitAt(dir);
 
-  const readCheckpoint = (): Checkpoint | undefined =>
-    existsSync(checkpointPath)
-      ? parseCheckpoint(readFileSync(checkpointPath, "utf8"), checkpointPath)
-      : undefined;
+  const readCheckpoint = (): Checkpoint | undefined => {
+    if (!existsSync(checkpointPath)) {
+      return undefined;
+    }
+
+    try {
+      return parseCheckpoint(readFileSync(checkpointPath, "utf8"), checkpointPath, jobId);
+    } catch (error) {
+      const committed = readCommittedFile(dir, CHECKPOINT_FILE);
+
+      if (committed === undefined) {
+        throw error;
+      }
+
+      return parseCheckpoint(committed, `${checkpointPath} (from git)`, jobId);
+    }
+  };
 
   const writeCheckpoint = (checkpoint: Checkpoint): void => {
-    writeFileSync(checkpointPath, `${JSON.stringify(checkpoint, null, 2)}\n`, "utf8");
+    const parsed = checkpointSchema.safeParse(checkpoint);
+
+    if (!parsed.success) {
+      throw new JobStoreError(`Refusing to write an invalid checkpoint: ${parsed.error.message}`);
+    }
+
+    writeAtomically(checkpointPath, `${JSON.stringify(parsed.data, null, 2)}\n`);
   };
 
   return {
@@ -112,24 +149,68 @@ function job(dir: string, jobId: string): Job {
     git,
     reportPath: join(dir, REPORT_FILE),
     advanceTo(state, now) {
-      const current = readCheckpoint();
+      return withLock(lockPath, () => {
+        const current = readCheckpoint();
 
-      if (current === undefined) {
-        throw new JobStoreError(`Job "${jobId}" has no checkpoint to advance`);
-      }
+        if (current === undefined) {
+          throw new JobStoreError(`Job "${jobId}" has no checkpoint to advance`);
+        }
 
-      const next = withState(current, state, now);
-      writeCheckpoint(next);
-      git.commit(`checkpoint: ${state}`);
+        if (!canLeave(current.state)) {
+          throw new JobStoreError(`Job "${jobId}" is ${current.state} and cannot move to ${state}`);
+        }
 
-      return next;
+        const previous = readFileSync(checkpointPath, "utf8");
+        const next = withState(current, state, now);
+        writeCheckpoint(next);
+
+        try {
+          git.commit(`checkpoint: ${state}`);
+        } catch (error) {
+          writeAtomically(checkpointPath, previous);
+          throw error;
+        }
+
+        return next;
+      });
     },
     readCheckpoint,
     writeCheckpoint,
   };
 }
 
-function parseCheckpoint(content: string, path: string): Checkpoint {
+function writeAtomically(path: string, content: string): void {
+  const temporary = `${path}.tmp`;
+  const file = openSync(temporary, "w");
+
+  try {
+    writeSync(file, content);
+    fsyncSync(file);
+  } finally {
+    closeSync(file);
+  }
+
+  renameSync(temporary, path);
+}
+
+function withLock<T>(lockPath: string, work: () => T): T {
+  let lock: number;
+
+  try {
+    lock = openSync(lockPath, "wx");
+  } catch {
+    throw new JobStoreError(`Job is already being advanced (${lockPath} exists)`);
+  }
+
+  try {
+    return work();
+  } finally {
+    closeSync(lock);
+    rmSync(lockPath, { force: true });
+  }
+}
+
+function parseCheckpoint(content: string, path: string, jobId: string): Checkpoint {
   let raw: unknown;
 
   try {
@@ -142,6 +223,10 @@ function parseCheckpoint(content: string, path: string): Checkpoint {
 
   if (!parsed.success) {
     throw new JobStoreError(`${path} is not a valid checkpoint: ${parsed.error.message}`);
+  }
+
+  if (parsed.data.jobId !== jobId) {
+    throw new JobStoreError(`${path} belongs to job "${parsed.data.jobId}" but sits in "${jobId}"`);
   }
 
   return parsed.data;

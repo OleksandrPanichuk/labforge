@@ -49,16 +49,50 @@ export function initialCheckpoint(jobId: string, now = new Date().toISOString())
   };
 }
 
+export const PAUSED_STATES = ["PAUSED_RATE_LIMIT", "PAUSED_WAITING_USER"] as const;
+
+export const TERMINAL_STATES = ["DONE", "CANCELLED"] as const;
+
+export function isPaused(state: JobState): boolean {
+  return (PAUSED_STATES as readonly JobState[]).includes(state);
+}
+
+export function isTerminal(state: JobState): boolean {
+  return (TERMINAL_STATES as readonly JobState[]).includes(state);
+}
+
+export function canLeave(state: JobState): boolean {
+  return !isTerminal(state);
+}
+
 export function withState(
   checkpoint: Checkpoint,
   state: JobState,
   now = new Date().toISOString(),
 ): Checkpoint {
-  return {
+  const next: Checkpoint = {
     ...checkpoint,
     state,
     previousState: checkpoint.state,
     updatedAt: now,
-    cycles: { ...checkpoint.cycles, [state]: (checkpoint.cycles[state] ?? 0) + 1 },
+    cycles: { ...checkpoint.cycles, ...cycleFor(checkpoint, state) },
   };
+
+  if (!isPaused(state) && state !== "FAILED") {
+    next.resumeAt = undefined;
+    next.lastError = undefined;
+  }
+
+  return next;
+}
+
+function cycleFor(checkpoint: Checkpoint, state: JobState): Partial<Record<JobState, number>> {
+  const rerun = checkpoint.state === state;
+  const resumed = isPaused(checkpoint.state);
+
+  if (rerun || resumed) {
+    return {};
+  }
+
+  return { [state]: (checkpoint.cycles[state] ?? 0) + 1 };
 }

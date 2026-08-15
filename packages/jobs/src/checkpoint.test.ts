@@ -54,11 +54,19 @@ describe("withState", () => {
     expect(before.state).toBe("INGEST");
   });
 
-  test("counts how often a state has been entered", () => {
+  test("counts a state each time the job comes back round to it", () => {
     const first = withState(initialCheckpoint("job_1"), "FIX", "2026-08-15T10:00:00.000Z");
-    const second = withState(first, "FIX", "2026-08-15T10:05:00.000Z");
+    const review = withState(first, "CODE_REVIEW", "2026-08-15T10:01:00.000Z");
+    const second = withState(review, "FIX", "2026-08-15T10:02:00.000Z");
 
     expect(second.cycles.FIX).toBe(2);
+  });
+
+  test("does not count re-entering the state the job is already in", () => {
+    const first = withState(initialCheckpoint("job_1"), "FIX", "2026-08-15T10:00:00.000Z");
+    const rerun = withState(first, "FIX", "2026-08-15T10:05:00.000Z");
+
+    expect(rerun.cycles.FIX).toBe(1);
   });
 
   test("keeps counts per state", () => {

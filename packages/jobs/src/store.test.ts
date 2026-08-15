@@ -84,16 +84,17 @@ describe("checkpoints", () => {
     expect(job.readCheckpoint()).toBeUndefined();
   });
 
-  test("refuses to load a checkpoint that does not match the schema", () => {
+  test("falls back to the committed checkpoint when the file is off-schema", () => {
     const job = createJobStore(root).createJob("job_1");
     writeFileSync(join(job.dir, "checkpoint.json"), JSON.stringify({ state: "VIBING" }));
 
-    expect(() => job.readCheckpoint()).toThrow(JobStoreError);
+    expect(job.readCheckpoint()?.state).toBe("INGEST");
   });
 
-  test("refuses to load a checkpoint that is not json", () => {
+  test("refuses a checkpoint that is neither readable nor recoverable", () => {
     const job = createJobStore(root).createJob("job_1");
     writeFileSync(join(job.dir, "checkpoint.json"), "not json");
+    rmSync(join(job.dir, ".git"), { recursive: true, force: true });
 
     expect(() => job.readCheckpoint()).toThrow(JobStoreError);
   });
@@ -129,7 +130,8 @@ describe("advanceTo", () => {
     const job = createJobStore(root).createJob("job_1");
 
     job.advanceTo("FIX", "2026-08-15T10:00:00.000Z");
-    const second = job.advanceTo("FIX", "2026-08-15T10:01:00.000Z");
+    job.advanceTo("CODE_REVIEW", "2026-08-15T10:01:00.000Z");
+    const second = job.advanceTo("FIX", "2026-08-15T10:02:00.000Z");
 
     expect(second.cycles.FIX).toBe(2);
   });
