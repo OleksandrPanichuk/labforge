@@ -1,93 +1,96 @@
-# LabForge — контекст для кодових агентів
+# LabForge — context for coding agents
 
-Ти працюєш над LabForge — системою автоматизації лабораторних робіт. Повна архітектура: `docs/labforge-architecture.md` (читати перед будь-якою нетривіальною задачею). Цей файл — стислі правила і план.
+You are working on LabForge, a system that automates university lab assignments. Full architecture: `docs/labforge-architecture.md` (read it before any non-trivial task). This file holds the condensed rules and the plan.
 
-## Що це
+## What this is
 
-Пайплайн: файл лаби → агентний цикл (Claude Agent SDK) → код лаби + Report IR (JSON) → HTML-превʼю (docx-вигляд) → рев'ю людиною → docx + md-підготовка до захисту. Оркестрація — детермінована стейт-машина в NestJS, LLM — тільки всередині станів.
+Pipeline: lab task file → agent loop (Claude Agent SDK) → lab code + Report IR (JSON) → HTML preview (docx-looking) → human review → docx + markdown defense prep. Orchestration is a deterministic state machine in NestJS; the LLM runs only inside states.
 
-## Стек (не міняти без узгодження)
+## Stack (do not change without agreement)
 
-- **Monorepo:** bun workspaces + Turborepo. TypeScript strict everywhere. Лінт/формат — Biome (`bun run lint`).
-- **Backend:** NestJS. Черга: BullMQ + Redis (queue `labs`, concurrency: 1).
-- **LLM:** `@anthropic-ai/claude-agent-sdk`. Auth: локальний `claude login` (НЕ API key у MVP; код має читати auth-режим з env `LLM_AUTH_MODE=subscription|api_key`, щоб перемикання було зміною env).
-- **DB:** PostgreSQL + Prisma. JSON-документи (IR, checkpoints meta) — JSONB-колонки. НЕ додавати Mongo.
-- **Frontend:** TanStack Start. Live-оновлення: SSE (не WebSocket). Превʼю: Paged.js + KaTeX + CodeMirror 6 (read-only).
-- **docx:** бібліотека `docx`. Формули: temml (LaTeX→MathML) → OMML, fallback — PNG 300dpi.
-- **Sandbox:** Docker через dockerode. Агенти НЕ мають прямого `Bash(docker …)` — тільки custom tool `run_in_sandbox`.
-- **TG:** grammY.
+- **Monorepo:** bun workspaces + Turborepo. TypeScript strict everywhere. Lint/format: Biome (`bun run lint`). Tests: built-in `bun test`.
+- **Backend:** NestJS. Queue: BullMQ + Redis (queue `labs`, concurrency: 1).
+- **LLM:** `@anthropic-ai/claude-agent-sdk`. Auth: local `claude login` (NOT an API key in the MVP; the code reads the auth mode from `LLM_AUTH_MODE=subscription|api_key` so switching is an env change).
+- **DB:** PostgreSQL + Prisma. JSON documents (IR, checkpoint meta) live in JSONB columns. Do NOT add Mongo.
+- **Frontend:** TanStack Start. Live updates: SSE (not WebSocket). Preview: Paged.js + KaTeX + CodeMirror 6 (read-only).
+- **docx:** the `docx` library. Formulas: temml (LaTeX→MathML) → OMML, fallback PNG 300 dpi.
+- **Sandbox:** Docker via dockerode. Agents get NO direct `Bash(docker …)` — only the custom tool `run_in_sandbox`.
+- **Telegram:** grammY.
+- **Logging:** `@labforge/logger` (pino).
 
-## Структура репо
+## Repo layout
 
 ```
 apps/
-  core/        # NestJS: стейт-машина, worker, SDK-оркестрація, API, SSE
-  web/         # TanStack Start: чат + превʼю
-  tg-bot/      # grammY
+  core/            # NestJS: state machine, worker, SDK orchestration, API, SSE
+    src/modules/   # one folder per feature (see the nestjs-modules skill)
+  web/             # TanStack Start: chat + preview
+  tg-bot/          # grammY
 packages/
-  ir/          # zod-схема Report IR + типи (source of truth: src/schema.ts)
-  resolver/    # виконання cells, підстановка values в IR
-  renderer-docx/  # IR → .docx (детермінований, golden-тести)
-  sandbox/     # dockerode-обгортка, run_in_sandbox
-agents/        # промпти сабагентів (*.md) — довідка: docs/agent-prompts.md
-configs/       # REQUIREMENTS.md, STYLE_GUIDE.md + ієрархія subjects/, teachers/
-data/          # parsed методички, старі лаби (md + summary.md)
-kb/            # накопичувані нотатки per subject
-jobs/<id>/     # робочі директорії лаб: src/ cells/ artifacts/ runs/ report.ir.json checkpoint.json
-docs/          # архітектурна дока
+  ir/              # zod schema of the Report IR + types (source of truth: src/schema.ts)
+  resolver/        # runs cells, substitutes values into the IR
+  renderer-docx/   # IR → .docx (deterministic, golden tests)
+  sandbox/         # dockerode wrapper, run_in_sandbox
+  logger/          # shared structured logger
+agents/            # subagent prompts (*.md) — reference: docs/agent-prompts.md
+configs/           # REQUIREMENTS.md, STYLE_GUIDE.md + subjects/, teachers/ hierarchy
+data/             # parsed methodology docs, past labs (md + summary.md)
+kb/                # accumulated notes per subject
+jobs/<id>/         # per-lab working dirs: src/ cells/ artifacts/ runs/ report.ir.json checkpoint.json
+docs/              # architecture documentation
 ```
 
-## Інваріанти (порушення = баг, незалежно від того, хто просить)
+## Invariants (a violation is a bug, no matter who asked for it)
 
-1. **Числа — тільки через resolver.** Агенти пишуть у IR плейсхолдери `{{v:key}}`; поле `values` заповнює ТІЛЬКИ resolver виконанням cells у sandbox. Валідатор IR: hard fail, якщо (а) є `{{v:key}}` без відповідної cell; (б) після resolve лишились unresolved values. Warning-список на рев'ю (не hard fail — роки, номери формул, константи легітимні): у `text` блоків "сирі" числа, схожі на обчислювані результати, поза `{{v:}}` (евристика: числа з ≥3 значущими цифрами / у контексті "= число").
-2. **IR — єдиний source of truth звіту.** Превʼю і docx рендеряться з одного `report.ir.json`. Ніхто не патчить HTML чи docx напряму. Правки (агентські й людські) — це патчі до IR по `block.id`.
-3. **`src/` — чистий код лаби** (те, що здається викладачу). `cells/` імпортують із `src/`, копіювати логіку заборонено. Код друку значень для звіту в `src/` не потрапляє.
-4. **Оркестрація детермінована.** Рішення "чи продовжувати цикл рев'ю" — стоп-правила в коді (макс 3 цикли; нема findings severity ≥ major; однакові findings 2 рази поспіль → ескалація юзеру). Жодних LLM-"менеджерів".
-5. **Кожен стан стейт-машини rerunnable з файлів.** Вхід стану — файли в `jobs/<id>/`, не памʼять попередньої сесії. Після стану — checkpoint.json + git commit job-директорії.
-6. **Sandbox:** `--network none` за замовчуванням, memory 1g, cpus 1, pids 256, timeout 120s, non-root, job read-only mount + writable `artifacts/`. Мережа — тільки явним прапорцем на job.
-7. **Inline-HTML у IR `text`** — тільки білий список: `b i u sub sup span[data-x]`. Обидва рендерери санітизують.
-8. **Юзер бачить тільки свої jobs.** kb/ і data/ — спільні, jobs/ — ізольовані по userId.
+1. **Numbers come only from the resolver.** Agents write `{{v:key}}` placeholders into the IR; the `values` field is filled ONLY by the resolver executing cells in the sandbox. IR validator hard-fails when: (a) a `{{v:key}}` has no matching cell; (b) unresolved values remain after resolve. Review warning (not a hard fail — years, formula numbers and constants are legitimate): raw computed-looking numbers in block `text` outside `{{v:}}` (heuristic: numbers with ≥3 significant digits, or in a "= number" context).
+2. **The IR is the single source of truth for the report.** Preview and docx both render from one `report.ir.json`. Nobody patches HTML or docx directly. Edits — agent and human alike — are patches to the IR keyed by `block.id`.
+3. **`src/` holds clean lab code** (what gets submitted to the teacher). `cells/` import from `src/`; copying logic is forbidden. Report-only value printing never lands in `src/`.
+4. **Orchestration is deterministic.** "Should the review loop continue?" is decided by stop rules in code (max 3 cycles; no findings of severity ≥ major; identical findings twice in a row → escalate to the user). No LLM "managers".
+5. **Every state is rerunnable from files.** A state's input is the files in `jobs/<id>/`, never the memory of a previous session. After each state: `checkpoint.json` + a git commit of the job directory.
+6. **Sandbox:** `--network none` by default, memory 1g, cpus 1, pids 256, timeout 120 s, non-root, read-only job mount + writable `artifacts/`. Network access only via an explicit per-job flag.
+7. **Inline HTML in IR `text`** — allowlist only: `b i u sub sup span[data-x]`. Both renderers sanitize.
+8. **A user sees only their own jobs.** `kb/` and `data/` are shared; `jobs/` are isolated per userId.
 
-## Стейт-машина
+## State machine
 
-`INGEST → CONTEXT → CLARIFY(опц.) → SOLVE → CODE_REVIEW ⇄ FIX → IR_WRITE → RESOLVE → REPORT_REVIEW ⇄ IR_FIX → HUMAN_REVIEW ⇄ REVISION → BUILD → DEFENSE_PREP → DONE`
-+ `PAUSED_RATE_LIMIT`, `PAUSED_WAITING_USER`, `FAILED`, `CANCELLED` — досяжні з будь-якого стану.
+`INGEST → CONTEXT → CLARIFY(optional) → SOLVE → CODE_REVIEW ⇄ FIX → IR_WRITE → RESOLVE → REPORT_REVIEW ⇄ IR_FIX → HUMAN_REVIEW ⇄ REVISION → BUILD → DEFENSE_PREP → DONE`
+plus `PAUSED_RATE_LIMIT`, `PAUSED_WAITING_USER`, `FAILED`, `CANCELLED` — reachable from any state.
 
-- Rate limit від SDK → `PAUSED_RATE_LIMIT`, delayed BullMQ job на час резету, потім `resume: sessionId`; якщо сесія протухла — rerun поточного стану з checkpoint.
-- `ask_user` tool → `PAUSED_WAITING_USER`, session id збережено, worker звільнено; відповідь із TG/веб → resume.
-- Watchdog: стан без прогресу 30 хв → алерт власнику в TG.
+- Rate limit from the SDK → `PAUSED_RATE_LIMIT`, a delayed BullMQ job scheduled for the reset time, then `resume: sessionId`; if the session has expired, rerun the current state from its checkpoint.
+- The `ask_user` tool → `PAUSED_WAITING_USER`, session id stored, worker released; an answer from Telegram or the web resumes it.
+- Watchdog: a state with no progress for 30 min alerts the owner on Telegram.
 
-## Конвенції коду
+## Code conventions
 
-- **У коді — ТІЛЬКИ англійська.** Ідентифікатори, рядки, повідомлення помилок і логів, тексти zod-валідації, коментарі, назви комітів. Жодного українського тексту у файлах коду (`.ts`, `.prisma`, `.yml`, конфіги). Українська — лише в документації, промптах агентів (`agents/*.md`), `configs/*.md` і текстах, які бачить юзер.
-- **`apps/core` — стандартна NestJS-структура** (деталі: скіл `nestjs-modules`): один фічер = папка `src/modules/<feature>/` з файлами `<feature>.module.ts / .controller.ts / .service.ts / .repository.ts / dto/`. Контролери тонкі; Prisma — тільки в repository; бізнес-логіка — в сервісах; крос-модульний доступ — через exports модуля.
-- **Коментарі в коді: дефолт — НЕ писати.** Коментар допустимий лише як виняток, коли інформацію неможливо вивести з коду (зовнішнє обмеження, неочевидний інваріант, причина неочевидного рішення). Перед тим як додати, подумай двічі: (1) чи можна виразити це самим кодом — назвою, типом, структурою, валідацією (напр. zod-refine з повідомленням замість коментаря)? якщо так — зроби так і коментаря не пиши; (2) чи справді читач без нього помилиться? якщо ні — не пиши. Пояснення рівня "як це працює" і специфікації йдуть у README пакета, не в код. Категорично заборонено: коментарі-переказ наступного рядка, "what" замість "why", TODO-плани, історія змін, коментарі-виправдання для рев'ювера.
-- **Логування — тільки через `@labforge/logger`** (`createLogger({ service })`, `withContext` для `jobId`/`state`/`agent`). `console.*` у продуктовому коді заборонений. Нове наскрізне поле логів спершу додається в `LogContext`.
-- Zod-схеми на всі зовнішні межі (API DTO, IR, checkpoint, tool inputs).
-- Помилки SDK/sandbox — типізовані (`RateLimitError`, `SandboxTimeoutError`, …), ловляться в worker, мапляться на стани.
-- Тести: golden-тести renderer-docx (fixture IR → snapshot XML), unit на resolver і валідатор IR — обовʼязкові до мержа цих пакетів.
+- **Code is English ONLY.** Identifiers, strings, error and log messages, zod validation messages, comments, commit messages. No Ukrainian text in code files (`.ts`, `.prisma`, `.yml`, configs). Ukrainian belongs only in agent prompts (`agents/*.md`), the content of `configs/*.md`, prose in `docs/`, and text the end user reads (report content, Telegram and web messages).
+- **`apps/core` uses the default NestJS structure** (details: the `nestjs-modules` skill): one feature = one folder `src/modules/<feature>/` containing `<feature>.module.ts / .controller.ts / .service.ts / .repository.ts / dto/`. Controllers stay thin; Prisma lives only in repositories; business logic lives in services; cross-module access goes through the module's exports.
+- **Comments: the default is to write none.** A comment is an exception, allowed only when the information cannot be derived from the code (an external constraint, a non-obvious invariant, the reason behind a non-obvious decision). Before adding one, think twice: (1) can the code itself express it — a name, a type, a structure, a validation (e.g. a zod refine with a message instead of a comment)? if yes, do that and write no comment; (2) would a reader actually get it wrong without it? if no, do not write it. "How it works" explanations and specs belong in the package README, not in the code. Strictly forbidden: comments restating the next line, "what" instead of "why", TODO plans, change history, comments justifying a change to a reviewer.
+- **Logging goes only through `@labforge/logger`** (`createLogger({ service })`, `withContext` for `jobId`/`state`/`agent`). `console.*` is banned in production code (enforced by Biome). A new cross-cutting log field is added to `LogContext` first.
+- zod schemas on every external boundary (API DTOs, IR, checkpoint, tool inputs).
+- SDK and sandbox errors are typed (`RateLimitError`, `SandboxTimeoutError`, …), caught in the worker and mapped to states.
+- Tests: golden tests for renderer-docx (fixture IR → snapshot XML) and unit tests for the resolver and the IR validator are required before merging those packages.
 
-## Фази і acceptance-критерії
+## Phases and acceptance criteria
 
-**Фаза 0 — препроцесинг.** Скрипт `bun run ingest:pdf <file>` → md у data/. Скелет configs/ з базовими REQUIREMENTS.md і STYLE_GUIDE.md (заглушки, власник заповнить).
-✅ Довільний PDF методички конвертується в читабельний md.
+**Phase 0 — preprocessing.** Script `bun run ingest:pdf <file>` → md in `data/`. Skeleton `configs/` with base REQUIREMENTS.md and STYLE_GUIDE.md (stubs, the owner fills them in).
+✅ An arbitrary methodology PDF converts into readable md.
 
-**Фаза 1 — ядро без веба.** packages/ir + resolver + sandbox + стейт-машина + стислий флоу (Scout+Solver → Reviewer+Fixer → ReportWriter self-review) через Agent SDK. Запуск: `bun run lab:run <path-to-task-file> --subject X --teacher Y`. Вихід: `jobs/<id>/` з src/, report.ir.json (resolved), report.docx.
-✅ Реальна лаба проходить END-TO-END без веба; всі values resolved; docx відкривається у Word без помилок; повторний запуск стану з checkpoint працює.
+**Phase 1 — core without the web.** packages/ir + resolver + sandbox + state machine + the condensed flow (Scout+Solver → Reviewer+Fixer → ReportWriter self-review) through the Agent SDK. Entry point: `bun run lab:run <path-to-task-file> --subject X --teacher Y`. Output: `jobs/<id>/` with `src/`, `report.ir.json` (resolved), `report.docx`.
+✅ A real lab goes END-TO-END without the web; all values resolved; the docx opens in Word without errors; rerunning a state from a checkpoint works.
 
-**Фаза 2 — TG + черга.** grammY-бот (whitelist по tg id), BullMQ, ask_user через TG, rate-limit пауза/резюм, статуси юзеру.
-✅ Лаба, закинута в TG, доходить до готового docx у TG; друга лаба чекає в черзі; ліміт посеред роботи → пауза → автопродовження.
+**Phase 2 — Telegram + queue.** grammY bot (whitelist by tg id), BullMQ, `ask_user` through Telegram, rate-limit pause/resume, status updates to the user.
+✅ A lab dropped into Telegram reaches a finished docx in Telegram; a second lab waits in the queue; hitting a limit mid-run pauses and then auto-continues.
 
-**Фаза 3 — веб-превʼю.** TanStack Start, deep link з TG (JWT 15 хв), рендер IR через Paged.js (A4, поля 20/10/20/20мм, номери сторінок), KaTeX, dotted-underline explanations + бокова панель (text: пояснення+джерела; code: CodeMirror + Run у sandbox + чат по виділенню), selection→чат по блоках, SSE-оновлення, меню на generated-зображеннях.
-✅ Превʼю візуально відповідає docx посторінково; клік по числу показує cell і Run працює; коментар юзера до блоку → патч IR → превʼю оновилось без перезавантаження.
+**Phase 3 — web preview.** TanStack Start, deep link from Telegram (JWT, 15 min), IR rendered through Paged.js (A4, margins 20/10/20/20 mm, page numbers), KaTeX, dotted-underline explanations + side panel (text: explanation + sources; code: CodeMirror + Run in the sandbox + chat on a selection), selection → per-block chat, SSE updates, a menu on generated images.
+✅ The preview matches the docx page by page; clicking a number shows its cell and Run works; a user comment on a block patches the IR and the preview updates without a reload.
 
-**Фаза 4 — повний цикл.** Окремі reviewer/fixer сабагенти (прапорець `--full-cycle`), defense prep агент, kb-накопичення після DONE, model mixing per-agent, cloudflared.
-✅ `--full-cycle` проганяє окремі рев'ю-сесії зі стоп-правилами; після DONE у kb/<subject>/notes.md зʼявився запис; defense.md містить всі 6 секцій зі специфікації (docs, §9).
+**Phase 4 — full cycle.** Separate reviewer/fixer subagents (the `--full-cycle` flag), defense prep agent, kb accumulation after DONE, per-agent model mixing, cloudflared.
+✅ `--full-cycle` runs separate review sessions with the stop rules; after DONE a note appears in `kb/<subject>/notes.md`; `defense.md` contains all 6 sections from the spec (docs, §9).
 
-## Чого НЕ робити
+## What NOT to do
 
-- Не додавати БД/брокери/фреймворки поза списком стеку.
-- Не давати агентам ширші allowedTools, ніж у agents/*.md.
-- Не генерувати docx з HTML — тільки з IR.
-- Не зберігати секрети в репо; env — через .env (gitignored) + .env.example.
-- Не додавати себе як Co-Author в комітах
+- Do not add databases, brokers or frameworks outside the stack list.
+- Do not grant agents broader `allowedTools` than `agents/*.md` declare.
+- Do not generate the docx from HTML — only from the IR.
+- Do not store secrets in the repo; env goes through `.env` (gitignored) + `.env.example`.
+- Do not add yourself as Co-Author in commits.
