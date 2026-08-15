@@ -23,4 +23,9 @@ describe("latexToOmml", () => {
   test("rejects an unknown command instead of emitting a broken formula", () => {
     expect(() => latexToOmml("\\notacommand{x}")).toThrow(FormulaError);
   });
+
+  test("rejects empty and whitespace-only latex", () => {
+    expect(() => latexToOmml("")).toThrow(FormulaError);
+    expect(() => latexToOmml("   ")).toThrow(FormulaError);
+  });
 });
