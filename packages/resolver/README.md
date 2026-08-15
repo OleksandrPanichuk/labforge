@@ -37,6 +37,13 @@ const { ir, runs, errors } = await resolveValues(document, {
 Значення, яке не вдалося отримати, лишається без `value` — і його ловить
 `validateReport(ir, { phase: "post-resolve" })` як блокер збірки.
 
+## Стан перевірки
+
+20 юніт-тестів на фейковому runner + 4 інтеграційні (`pipeline.integration.test.ts`,
+пропускаються без Docker): реальний cell імпортує функції з `src/`, виконується в sandbox,
+заповнює обидва значення одним запуском, документ проходить `validateReport(post-resolve)`,
+а зламаний cell лишає значення незаповненим і валідацію — червоною.
+
 ## runRef
 
 `runs/<cellRef із заміненими нелітерними символами>.json` — детерміновано, без годинника,
