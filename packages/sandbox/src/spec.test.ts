@@ -66,6 +66,12 @@ describe("buildContainerSpec", () => {
     expect(spec.Env).toContain("PYTHONDONTWRITEBYTECODE=1");
   });
 
+  test("puts the job root on the import path so cells can import from src", () => {
+    const spec = buildContainerSpec(request);
+
+    expect(spec.Env).toContain("PYTHONPATH=/job");
+  });
+
   test("passes caller environment through", () => {
     const spec = buildContainerSpec({ ...request, env: { VARIANT: "7" } });
 

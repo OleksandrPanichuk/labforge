@@ -25,6 +25,7 @@ const result = await runInSandbox(
 | Користувач | `1000:1000`, `CapDrop: ALL`, `no-new-privileges` |
 | Монтування | `<jobDir>:/job:ro` + `<jobDir>/artifacts:/job/artifacts:rw` |
 | Scratch | tmpfs `/tmp` (64 MB); `HOME`, `MPLCONFIGDIR` вказують туди ж |
+| Import path | `PYTHONPATH=/job` — інакше `cells/x.py` не бачить `src/` (інваріант 3) |
 
 `Tty` вимкнено навмисно: інакше Docker зливає stdout і stderr в один потік, і попередження
 інтерпретатора ламають JSON, який resolver читає зі stdout. Кадри розбирає `demuxDockerStream`.
