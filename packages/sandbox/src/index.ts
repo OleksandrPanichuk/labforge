@@ -8,6 +8,11 @@ export {
   type SandboxRunResult,
 } from "./run";
 export {
+  DOCKER_SOCKET_CANDIDATES,
+  type PathProbe,
+  resolveDockerSocket,
+} from "./socket";
+export {
   buildContainerSpec,
   type ContainerSpec,
   JOB_MOUNT,
