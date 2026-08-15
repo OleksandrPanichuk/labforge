@@ -20,6 +20,8 @@ const FILES: Partial<Record<JobState, string>> = {
   IR_FIX: "report-findings.json",
 };
 
+const REVIEWS: JobState[] = ["CODE_REVIEW", "REPORT_REVIEW"];
+
 export function findingsFileFor(state: JobState): string | undefined {
   return FILES[state];
 }
@@ -34,6 +36,10 @@ export function readFindings(jobDir: string, state: JobState): Finding[] | undef
   const path = join(jobDir, "review", file);
 
   if (!existsSync(path)) {
+    if (REVIEWS.includes(state)) {
+      throw new Error(`${state} wrote no ${file}; a review that produced no findings file failed`);
+    }
+
     return [];
   }
 

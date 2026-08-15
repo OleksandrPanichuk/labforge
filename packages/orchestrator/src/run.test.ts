@@ -286,3 +286,25 @@ describe("loops must not interfere or spin", () => {
     expect(result.state).toBe("DONE");
   });
 });
+
+describe("a question is not an escape from the review budget", () => {
+  test("asking the student does not refill the fixer's cycles", async () => {
+    const asking: AgentOutcome = { status: "needs_user", sessionId: "s1", question: "?" };
+    const failing: AgentOutcome = {
+      status: "completed",
+      sessionId: "s1",
+      findings: [{ id: "f1", severity: "critical", what: "bug" }],
+    };
+
+    await runJob({ job, agents: agents({ SOLVE: [asking] }) });
+    await runJob({
+      job,
+      agents: agents({
+        CODE_REVIEW: [failing, failing, failing, failing, failing],
+        FIX: [asking],
+      }),
+    });
+
+    expect(job.readCheckpoint()?.cycles.FIX).toBeGreaterThan(0);
+  });
+});

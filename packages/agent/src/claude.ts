@@ -8,7 +8,7 @@ import {
   SandboxTimeoutError,
 } from "@labforge/sandbox";
 import { z } from "zod";
-import { rateLimitFrom, sessionIdFrom, textFrom } from "./messages";
+import { failureFrom, rateLimitFrom, sessionIdFrom, textFrom } from "./messages";
 import type { Session, SessionRequest, SessionResult } from "./session";
 
 export const TOOL_SERVER = "labforge";
@@ -30,43 +30,86 @@ export function claudeSession(options: ClaudeSessionOptions): Session {
     async run(request: SessionRequest): Promise<SessionResult> {
       const asked: string[] = [];
       const servers = { [TOOL_SERVER]: labforgeTools(options, engine, asked, logger) };
-
-      let sessionId = "";
-      let text = "";
-      let limited: { resetsAt?: string } | undefined;
+      const stream = {
+        sessionId: "",
+        text: "",
+        limited: undefined,
+        failure: undefined,
+        ended: false,
+      } as Collected;
 
       try {
         for await (const message of query({
           prompt: request.prompt,
-          options: {
-            cwd: request.cwd,
-            systemPrompt: request.systemPrompt,
-            allowedTools: request.allowedTools,
-            mcpServers: servers,
-            ...(options.model !== undefined && { model: options.model }),
-            ...(options.maxTurns !== undefined && { maxTurns: options.maxTurns }),
-            ...(request.resume !== undefined && { resume: request.resume }),
-          },
+          options: { ...sessionOptions(request, options), mcpServers: servers },
         })) {
-          sessionId = sessionIdFrom(message) ?? sessionId;
-          text += textFrom(message);
-          limited = rateLimitFrom(message) ?? limited;
+          collect(stream, message);
         }
       } catch (error) {
         return {
-          sessionId,
+          sessionId: stream.sessionId,
           status: "failed",
-          text,
+          text: stream.text,
           error: error instanceof Error ? error.message : String(error),
         };
       }
 
-      if (limited !== undefined) {
-        return { sessionId, status: "rate_limited", text, resetsAt: limited.resetsAt };
-      }
-
-      return { sessionId, status: "completed", text, question: asked[0] };
+      return settle(stream, asked[0]);
     },
+  };
+}
+
+interface Collected {
+  sessionId: string;
+  text: string;
+  limited?: { resetsAt?: string };
+  failure?: string;
+  ended: boolean;
+}
+
+function collect(stream: Collected, message: unknown): void {
+  stream.sessionId = sessionIdFrom(message) ?? stream.sessionId;
+  stream.text += textFrom(message);
+  stream.limited = rateLimitFrom(message) ?? stream.limited;
+
+  if ((message as { type?: string }).type === "result") {
+    stream.ended = true;
+    stream.failure = failureFrom(message);
+  }
+}
+
+function settle(stream: Collected, question?: string): SessionResult {
+  const base = { sessionId: stream.sessionId, text: stream.text };
+
+  if (stream.limited !== undefined) {
+    return { ...base, status: "rate_limited", resetsAt: stream.limited.resetsAt };
+  }
+
+  if (!stream.ended) {
+    return { ...base, status: "failed", error: "the session ended with no result" };
+  }
+
+  if (stream.failure !== undefined) {
+    return { ...base, status: "failed", error: stream.failure };
+  }
+
+  return { ...base, status: "completed", question };
+}
+
+export function sessionOptions(
+  request: SessionRequest,
+  options: Pick<ClaudeSessionOptions, "model" | "maxTurns"> = {},
+) {
+  return {
+    cwd: request.cwd,
+    systemPrompt: request.systemPrompt,
+    tools: request.allowedTools,
+    allowedTools: request.allowedTools,
+    settingSources: [] as [],
+    permissionMode: "bypassPermissions" as const,
+    ...(options.model !== undefined && { model: options.model }),
+    ...(options.maxTurns !== undefined && { maxTurns: options.maxTurns }),
+    ...(request.resume !== undefined && request.resume !== "" && { resume: request.resume }),
   };
 }
 

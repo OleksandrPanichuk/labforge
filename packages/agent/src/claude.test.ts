@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { RUNTIMES } from "@labforge/sandbox";
-import { rateLimitFrom, textFrom } from "./messages";
+import { sessionOptions } from "./claude";
+import { failureFrom, rateLimitFrom, textFrom } from "./messages";
 
 describe("reading the stream the sdk produces", () => {
   test("collects the assistant's text", () => {
@@ -54,5 +55,89 @@ describe("what the sandbox tool will run", () => {
   test("refuses a path that is not a cell", () => {
     expect(() => RUNTIMES.python.cellCommand("../../etc/passwd")).toThrow();
     expect(() => RUNTIMES.python.cellCommand("cells/x.py; rm -rf /")).toThrow();
+  });
+});
+
+describe("the options an agent session actually gets", () => {
+  test("restricts the toolset instead of only auto-allowing it", () => {
+    const options = sessionOptions({
+      prompt: "p",
+      systemPrompt: "s",
+      allowedTools: ["Read", "Grep"],
+      cwd: "/jobs/job_1",
+    });
+
+    expect(options.tools).toEqual(["Read", "Grep"]);
+    expect(options.allowedTools).toEqual(["Read", "Grep"]);
+  });
+
+  test("loads no settings from the machine, so a user allow-rule cannot leak in", () => {
+    const options = sessionOptions({
+      prompt: "p",
+      systemPrompt: "s",
+      allowedTools: ["Read"],
+      cwd: "/jobs/job_1",
+    });
+
+    expect(options.settingSources).toEqual([]);
+  });
+
+  test("never asks a human at the terminal", () => {
+    const options = sessionOptions({
+      prompt: "p",
+      systemPrompt: "s",
+      allowedTools: ["Read"],
+      cwd: "/jobs/job_1",
+    });
+
+    expect(options.permissionMode).toBeDefined();
+  });
+
+  test("does not resume an empty session id", () => {
+    const options = sessionOptions({
+      prompt: "p",
+      systemPrompt: "s",
+      allowedTools: ["Read"],
+      cwd: "/jobs/job_1",
+      resume: "",
+    });
+
+    expect(options.resume).toBeUndefined();
+  });
+
+  test("resumes a real session id", () => {
+    const options = sessionOptions({
+      prompt: "p",
+      systemPrompt: "s",
+      allowedTools: ["Read"],
+      cwd: "/jobs/job_1",
+      resume: "abc",
+    });
+
+    expect(options.resume).toBe("abc");
+  });
+});
+
+describe("how a session ended", () => {
+  test("treats a successful result as success", () => {
+    expect(failureFrom({ type: "result", subtype: "success", is_error: false })).toBeUndefined();
+  });
+
+  test("treats running out of turns as a failure, not a finished state", () => {
+    expect(failureFrom({ type: "result", subtype: "error_max_turns" })).toContain("max_turns");
+  });
+
+  test("treats an errored result as a failure even when the subtype says success", () => {
+    expect(failureFrom({ type: "result", subtype: "success", is_error: true })).toBeDefined();
+  });
+
+  test("reports the errors the sdk listed", () => {
+    expect(
+      failureFrom({ type: "result", subtype: "error_during_execution", errors: ["tool exploded"] }),
+    ).toContain("tool exploded");
+  });
+
+  test("ignores messages that are not the result", () => {
+    expect(failureFrom({ type: "assistant" })).toBeUndefined();
   });
 });

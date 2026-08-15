@@ -51,10 +51,24 @@ export function loadPrompt(agentsDir: string, name: string): AgentPrompt {
 }
 
 export function fill(body: string, values: Record<string, string>): string {
-  return body.replace(
-    /\{\{([\w-]+)\}\}/g,
-    (placeholder, key: string) => values[key] ?? placeholder,
-  );
+  const missing = new Set<string>();
+  const filled = body.replace(/\{\{([\w-]+)\}\}/g, (placeholder, key: string) => {
+    const value = values[key];
+
+    if (value === undefined) {
+      missing.add(key);
+
+      return placeholder;
+    }
+
+    return value;
+  });
+
+  if (missing.size > 0) {
+    throw new Error(`The prompt still has unfilled placeholders: ${[...missing].join(", ")}`);
+  }
+
+  return filled;
 }
 
 function toolsOf(declared: string | string[] | undefined): string[] {

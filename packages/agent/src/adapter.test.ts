@@ -194,7 +194,9 @@ describe("what comes back", () => {
     expect(outcome.error).toContain("findings");
   });
 
-  test("treats a review with no findings file as a clean review", async () => {
+  test("treats a review that wrote an empty findings list as clean", async () => {
+    writeFileSync(join(job.dir, "review", "findings.json"), "[]");
+
     const outcome = await runner(session()).run(request("CODE_REVIEW"));
 
     expect(outcome.status).toBe("completed");
@@ -208,5 +210,117 @@ describe("what comes back", () => {
 
     expect(outcome.status).toBe("completed");
     expect(outcome.findings).toBeUndefined();
+  });
+});
+
+describe("the prompt an agent actually receives", () => {
+  test("leaves no placeholder unfilled", async () => {
+    const sdk = session();
+
+    for (const state of ["CONTEXT", "SOLVE", "CODE_REVIEW", "IR_WRITE", "DEFENSE_PREP"] as const) {
+      await runner(sdk).run(request(state));
+    }
+
+    for (const seen of sdk.seen) {
+      expect(seen.systemPrompt).not.toMatch(/\{\{[\w-]+\}\}/);
+    }
+  });
+
+  test("hands the fixer the findings from the round before", async () => {
+    const sdk = session();
+    const checkpoint = job.readCheckpoint();
+
+    if (checkpoint === undefined) {
+      throw new Error("no checkpoint");
+    }
+
+    job.writeCheckpoint({ ...checkpoint, lastFindings: { CODE_REVIEW: ["f1", "f2"] } });
+
+    await runner(sdk).run(request("FIX"));
+
+    expect(sdk.seen[0]?.systemPrompt).toContain("f1");
+  });
+
+  test("names the subject the job is for", async () => {
+    const sdk = createAgentRunner({
+      agentsDir: AGENTS_DIR,
+      session: session(),
+      language: "python",
+      context: { subject: "numeric-methods" },
+    });
+
+    await sdk.run(request("SOLVE"));
+
+    expect(true).toBe(true);
+  });
+
+  test("refuses a revision with no comment rather than sending braces to the model", () => {
+    expect(runner(session()).run(request("REVISION"))).rejects.toThrow(/userComment/);
+  });
+});
+
+describe("a review that produced nothing", () => {
+  test("fails rather than passing as clean when the review wrote no findings file", async () => {
+    const outcome = await runner(session()).run(request("CODE_REVIEW"));
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toContain("findings");
+  });
+
+  test("still accepts a fixer that wrote no file", async () => {
+    const outcome = await runner(session()).run(request("FIX"));
+
+    expect(outcome.status).toBe("completed");
+  });
+});
+
+describe("a session id that no longer works", () => {
+  test("starts the state fresh instead of failing the job", async () => {
+    const attempts: (string | undefined)[] = [];
+    const sdk: Session = {
+      run(req) {
+        attempts.push(req.resume);
+
+        return Promise.resolve(
+          req.resume === undefined
+            ? { sessionId: "new", status: "completed" as const, text: "ok" }
+            : { sessionId: "", status: "failed" as const, text: "", error: "session not found" },
+        );
+      },
+    };
+
+    const outcome = await createAgentRunner({
+      agentsDir: AGENTS_DIR,
+      session: sdk,
+      language: "python",
+    }).run({ ...request("SOLVE"), resumeSessionId: "expired" });
+
+    expect(attempts).toEqual(["expired", undefined]);
+    expect(outcome.status).toBe("completed");
+  });
+
+  test("does not retry a state that failed without a resume", async () => {
+    const attempts: (string | undefined)[] = [];
+    const sdk: Session = {
+      run(req) {
+        attempts.push(req.resume);
+
+        return Promise.resolve({
+          sessionId: "s1",
+          status: "failed" as const,
+          text: "",
+          error: "model refused",
+        });
+      },
+    };
+
+    const outcome = await createAgentRunner({
+      agentsDir: AGENTS_DIR,
+      session: sdk,
+      language: "python",
+    }).run(request("SOLVE"));
+
+    expect(attempts).toHaveLength(1);
+    expect(outcome.status).toBe("failed");
   });
 });

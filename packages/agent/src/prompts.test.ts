@@ -83,8 +83,8 @@ describe("fill", () => {
     expect(fill("dir is {{jobDir}}", { jobDir: "/jobs/job_1" })).toBe("dir is /jobs/job_1");
   });
 
-  test("leaves a placeholder the caller did not supply visible", () => {
-    expect(fill("{{unknown}}", {})).toContain("{{unknown}}");
+  test("refuses to send a prompt with a placeholder nobody filled", () => {
+    expect(() => fill("{{unknown}}", {})).toThrow(/unknown/);
   });
 
   test("substitutes every occurrence", () => {
