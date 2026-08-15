@@ -1,15 +1,24 @@
-import type { Block, ReportIR, StyleDef, ValueEntry } from "@labforge/ir";
+import type { Block, ReportIR, StyleDef } from "@labforge/ir";
 import {
   AlignmentType,
   Document,
   Footer,
   type ISectionOptions,
+  LevelFormat,
   Packer,
   PageNumber,
   Paragraph,
+  type Table,
   TextRun,
 } from "docx";
-import { type InlineRun, parseInline } from "./inline";
+import {
+  type BlockContext,
+  createListInstances,
+  ORDERED_LIST_REFERENCE,
+  renderList,
+  renderTable,
+} from "./blocks";
+import { textRunsOf } from "./runs";
 import { mmToTwips, paragraphOptionsOf, runOptionsOf, styleIdOf } from "./styles";
 
 export type DocumentPart = "document" | "styles" | "footer1";
@@ -30,8 +39,33 @@ export function buildDocument(ir: ReportIR): Document {
       default: { document: styleOf(ir, DEFAULT_STYLE) },
       paragraphStyles: namedStyles(ir),
     },
+    numbering: {
+      config: [
+        {
+          reference: ORDERED_LIST_REFERENCE,
+          levels: [
+            {
+              level: 0,
+              format: LevelFormat.DECIMAL,
+              text: "%1.",
+              alignment: AlignmentType.LEFT,
+            },
+          ],
+        },
+      ],
+    },
     sections: [section(ir)],
   });
+}
+
+function renderBlocks(ir: ReportIR): (Paragraph | Table)[] {
+  const context = blockContext(ir);
+
+  return ir.blocks.flatMap((block) => renderBlock(block, context));
+}
+
+function blockContext(ir: ReportIR): BlockContext {
+  return { values: ir.values, styles: ir.styles, listInstance: createListInstances() };
 }
 
 function section(ir: ReportIR): ISectionOptions {
@@ -53,7 +87,7 @@ function section(ir: ReportIR): ISectionOptions {
       },
     },
     footers: ir.page.pageNumbers ? { default: pageNumberFooter() } : undefined,
-    children: ir.blocks.flatMap((block) => renderBlock(block, ir.values)),
+    children: renderBlocks(ir),
   };
 }
 
@@ -90,39 +124,33 @@ function namedStyles(ir: ReportIR) {
     }));
 }
 
-function renderBlock(block: Block, values: Record<string, ValueEntry>): Paragraph[] {
-  if (block.type === "paragraph") {
-    return [new Paragraph({ style: styleRef(block.style), children: runsOf(block.text, values) })];
+function renderBlock(block: Block, context: BlockContext): (Paragraph | Table)[] {
+  switch (block.type) {
+    case "paragraph":
+      return [
+        new Paragraph({ style: styleRef(block.style), children: runsOf(block.text, context) }),
+      ];
+    case "heading":
+      return [
+        new Paragraph({
+          style: styleRef(block.style),
+          outlineLevel: block.level - 1,
+          children: runsOf(block.text, context),
+        }),
+      ];
+    case "list":
+      return renderList(block, context);
+    case "table":
+      return renderTable(block, context);
+    default:
+      return [];
   }
-
-  if (block.type === "heading") {
-    return [
-      new Paragraph({
-        style: styleRef(block.style),
-        outlineLevel: block.level - 1,
-        children: runsOf(block.text, values),
-      }),
-    ];
-  }
-
-  return [];
 }
 
 function styleRef(style: string | undefined): string | undefined {
   return style === undefined ? undefined : styleIdOf(style);
 }
 
-function runsOf(text: string, values: Record<string, ValueEntry>): TextRun[] {
-  return parseInline(text, values).map(toTextRun);
-}
-
-function toTextRun(run: InlineRun): TextRun {
-  return new TextRun({
-    text: run.text,
-    bold: run.bold,
-    italics: run.italic,
-    underline: run.underline === true ? {} : undefined,
-    subScript: run.subscript,
-    superScript: run.superscript,
-  });
+function runsOf(text: string, context: BlockContext): TextRun[] {
+  return textRunsOf(text, context.values);
 }
