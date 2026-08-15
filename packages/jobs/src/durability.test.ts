@@ -249,3 +249,42 @@ describe("identity", () => {
     expect(store.listJobs()).toEqual(["job_1"]);
   });
 });
+
+describe("a dead worker must not brick the job", () => {
+  test("reclaims a lock whose owner is gone", () => {
+    const job = createJobStore(root).createJob("job_1");
+    writeFileSync(join(job.dir, "checkpoint.lock"), JSON.stringify({ pid: 999999, at: 0 }));
+
+    expect(job.advanceTo("SOLVE", "2026-08-15T10:00:00.000Z").state).toBe("SOLVE");
+  });
+
+  test("reclaims a lock left with no owner information", () => {
+    const job = createJobStore(root).createJob("job_1");
+    writeFileSync(join(job.dir, "checkpoint.lock"), "");
+
+    expect(job.advanceTo("SOLVE", "2026-08-15T10:00:00.000Z").state).toBe("SOLVE");
+  });
+
+  test("does not commit the lock, so restoring from git cannot recreate it", () => {
+    const job = createJobStore(root).createJob("job_1");
+
+    job.advanceTo("SOLVE", "2026-08-15T10:00:00.000Z");
+
+    const tracked = execFileSync("git", ["-C", job.dir, "ls-files"], { encoding: "utf8" });
+
+    expect(tracked).not.toContain("checkpoint.lock");
+    expect(tracked).not.toContain(".tmp");
+    expect(tracked).toContain("checkpoint.json");
+  });
+
+  test("leaves the job clean against its own history", () => {
+    const job = createJobStore(root).createJob("job_1");
+
+    job.advanceTo("SOLVE", "2026-08-15T10:00:00.000Z");
+    const dirty = execFileSync("git", ["-C", job.dir, "status", "--porcelain"], {
+      encoding: "utf8",
+    }).trim();
+
+    expect(dirty).toBe("");
+  });
+});

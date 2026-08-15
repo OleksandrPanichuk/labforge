@@ -8,6 +8,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  writeFileSync,
   writeSync,
 } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -24,6 +25,7 @@ import { type JobGit, jobGitAt, readCommittedFile } from "./git";
 export const JOB_DIRECTORIES = ["src", "cells", "artifacts", "runs", "context", "review"] as const;
 
 export const CHECKPOINT_FILE = "checkpoint.json";
+const IGNORED = ["checkpoint.lock", "*.tmp"];
 export const LOCK_FILE = "checkpoint.lock";
 export const REPORT_FILE = "report.ir.json";
 
@@ -101,6 +103,8 @@ function prepare(root: string, jobId: string, checkpoint: Checkpoint): Job {
   for (const directory of JOB_DIRECTORIES) {
     mkdirSync(join(dir, directory), { recursive: true });
   }
+
+  writeFileSync(join(dir, ".gitignore"), `${IGNORED.join("\n")}\n`, "utf8");
 
   const created = job(dir, jobId);
   created.git.init();
@@ -194,19 +198,61 @@ function writeAtomically(path: string, content: string): void {
 }
 
 function withLock<T>(lockPath: string, work: () => T): T {
-  let lock: number;
-
-  try {
-    lock = openSync(lockPath, "wx");
-  } catch {
-    throw new JobStoreError(`Job is already being advanced (${lockPath} exists)`);
-  }
+  const lock = acquire(lockPath);
 
   try {
     return work();
   } finally {
     closeSync(lock);
     rmSync(lockPath, { force: true });
+  }
+}
+
+function acquire(lockPath: string): number {
+  try {
+    return claim(lockPath);
+  } catch {
+    if (heldByLiveProcess(lockPath)) {
+      throw new JobStoreError(`Job is already being advanced (${lockPath} is held)`);
+    }
+
+    rmSync(lockPath, { force: true });
+
+    try {
+      return claim(lockPath);
+    } catch {
+      throw new JobStoreError(`Job is already being advanced (${lockPath} is held)`);
+    }
+  }
+}
+
+function claim(lockPath: string): number {
+  const lock = openSync(lockPath, "wx");
+
+  writeSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() }));
+
+  return lock;
+}
+
+function heldByLiveProcess(lockPath: string): boolean {
+  let owner: number;
+
+  try {
+    owner = Number((JSON.parse(readFileSync(lockPath, "utf8")) as { pid?: number }).pid);
+  } catch {
+    return false;
+  }
+
+  if (!Number.isInteger(owner) || owner === process.pid) {
+    return false;
+  }
+
+  try {
+    process.kill(owner, 0);
+
+    return true;
+  } catch {
+    return false;
   }
 }
 
