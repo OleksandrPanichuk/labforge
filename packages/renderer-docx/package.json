@@ -12,6 +12,7 @@
   "dependencies": {
     "@labforge/ir": "workspace:*",
     "docx": "^9.7.1",
+    "mathml2omml": "^0.5.0",
     "temml": "^0.13.4"
   },
   "devDependencies": {
