@@ -9,6 +9,7 @@ import {
   WidthType,
 } from "docx";
 import type { JobFiles } from "./files";
+import type { FormulaNumbering } from "./formula";
 import { textRunsOf } from "./runs";
 
 export const ORDERED_LIST_REFERENCE = "labforge-ordered";
@@ -46,6 +47,7 @@ export interface BlockContext {
   page: ReportIR["page"];
   files?: JobFiles;
   listInstance: ListInstances;
+  formulaNumber: FormulaNumbering;
 }
 
 export function renderList(

@@ -19,6 +19,7 @@ import {
   renderTable,
 } from "./blocks";
 import { type JobFiles, jobFilesAt } from "./files";
+import { createFormulaNumbering, renderFormula } from "./formula";
 import { renderCodeListing, renderImage, renderPageBreak } from "./media";
 import { textRunsOf } from "./runs";
 import { mmToTwips, paragraphOptionsOf, runOptionsOf, styleIdOf } from "./styles";
@@ -81,6 +82,7 @@ function blockContext(ir: ReportIR, options: RenderOptions): BlockContext {
     page: ir.page,
     files,
     listInstance: createListInstances(),
+    formulaNumber: createFormulaNumbering(),
   };
 }
 
@@ -164,6 +166,8 @@ function renderBlock(block: Block, context: BlockContext): (Paragraph | Table)[]
       return renderCodeListing(block, context);
     case "pagebreak":
       return renderPageBreak();
+    case "formula":
+      return renderFormula(block, context);
     default:
       return [];
   }

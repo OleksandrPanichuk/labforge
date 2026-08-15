@@ -14,3 +14,12 @@ export class UnresolvedValueError extends RenderError {
 export class InlineMarkupError extends RenderError {}
 
 export class StyleError extends RenderError {}
+
+export class FormulaError extends RenderError {
+  constructor(
+    readonly latex: string,
+    reason: string,
+  ) {
+    super(`Cannot convert formula "${latex}" to Word math: ${reason}`);
+  }
+}
