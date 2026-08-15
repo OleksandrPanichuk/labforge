@@ -206,3 +206,83 @@ describe("runJob", () => {
     expect(runner.visited).not.toContain("HUMAN_REVIEW");
   });
 });
+
+describe("loops must not interfere or spin", () => {
+  test("gives the report fixer its own chances even when ids repeat", async () => {
+    const shared = [{ id: "f0", severity: "major" as const, what: "issue" }];
+    const runner = agents({
+      CODE_REVIEW: [{ status: "completed", sessionId: "s1", findings: shared }],
+      REPORT_REVIEW: [{ status: "completed", sessionId: "s1", findings: shared }],
+    });
+
+    const result = await runJob({ job, agents: runner });
+
+    expect(runner.visited).toContain("IR_FIX");
+    expect(result.state).toBe("DONE");
+  });
+
+  test("does not run an agent for a failed job", async () => {
+    await runJob({
+      job,
+      agents: agents({ SOLVE: [{ status: "failed", sessionId: "s1", error: "boom" }] }),
+    });
+
+    const again = agents();
+    const result = await runJob({ job, agents: again });
+
+    expect(again.visited).toEqual([]);
+    expect(result.state).toBe("FAILED");
+  });
+
+  test("cannot bounce a failed job between failure and a pause", async () => {
+    await runJob({
+      job,
+      agents: agents({ SOLVE: [{ status: "failed", sessionId: "s1", error: "boom" }] }),
+    });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await runJob({
+        job,
+        agents: {
+          run: () =>
+            Promise.resolve({
+              status: "rate_limited" as const,
+              sessionId: "s1",
+              resumeAt: "later",
+            }),
+        },
+      });
+
+      expect(result.state).toBe("FAILED");
+    }
+  });
+
+  test("tells the student what to look at when a loop will not converge", async () => {
+    const repeated: AgentOutcome = {
+      status: "completed",
+      sessionId: "s1",
+      findings: [{ id: "f1", severity: "critical", what: "same bug" }],
+    };
+
+    const result = await runJob({ job, agents: agents({ CODE_REVIEW: Array(6).fill(repeated) }) });
+
+    expect(result.state).toBe("PAUSED_WAITING_USER");
+    expect(result.question).toBeDefined();
+    expect(result.question).toContain("same bug");
+  });
+
+  test("lets the loop try again after the student has been asked", async () => {
+    const repeated: AgentOutcome = {
+      status: "completed",
+      sessionId: "s1",
+      findings: [{ id: "f1", severity: "critical", what: "same bug" }],
+    };
+    await runJob({ job, agents: agents({ CODE_REVIEW: Array(6).fill(repeated) }) });
+
+    const after = agents();
+    const result = await runJob({ job, agents: after });
+
+    expect(after.visited).toContain("CODE_REVIEW");
+    expect(result.state).toBe("DONE");
+  });
+});

@@ -74,7 +74,7 @@ describe("the review loop", () => {
   });
 
   test("escalates when the same findings come back twice", () => {
-    const checkpoint = { ...at("CODE_REVIEW", { FIX: 1 }), lastFindings: ["f0"] };
+    const checkpoint = { ...at("CODE_REVIEW", { FIX: 1 }), lastFindings: { CODE_REVIEW: ["f0"] } };
 
     expect(decide(checkpoint, findings("major"))).toMatchObject({
       kind: "pause",
@@ -83,7 +83,10 @@ describe("the review loop", () => {
   });
 
   test("keeps going when the findings changed between rounds", () => {
-    const checkpoint = { ...at("CODE_REVIEW", { FIX: 1 }), lastFindings: ["other"] };
+    const checkpoint = {
+      ...at("CODE_REVIEW", { FIX: 1 }),
+      lastFindings: { CODE_REVIEW: ["other"] },
+    };
 
     expect(decide(checkpoint, findings("major"))).toMatchObject({
       kind: "advance",

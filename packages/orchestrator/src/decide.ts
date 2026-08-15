@@ -85,7 +85,7 @@ export function blockingFindings(findings: Finding[] = []): Finding[] {
 function resumeFrom(checkpoint: Checkpoint): Decision {
   const target = checkpoint.previousState;
 
-  if (target === undefined || isPaused(target) || isTerminal(target)) {
+  if (target === undefined || isPaused(target) || isTerminal(target) || target === "FAILED") {
     return { kind: "fail", reason: "the job was paused with no state to return to" };
   }
 
@@ -112,26 +112,35 @@ function afterReview(
   }
 
   if ((checkpoint.cycles[review.fix] ?? 0) >= MAX_REVIEW_CYCLES) {
-    return {
-      kind: "pause",
-      state: "PAUSED_WAITING_USER",
-      reason: `${review.fix} ran ${MAX_REVIEW_CYCLES} times and the findings are still open`,
-    };
+    return escalate(
+      `${review.fix} ran ${MAX_REVIEW_CYCLES} times and these findings are still open`,
+      blocking,
+    );
   }
 
   if (repeatsLastRound(checkpoint, blocking)) {
-    return {
-      kind: "pause",
-      state: "PAUSED_WAITING_USER",
-      reason: "the same findings came back unchanged, so the loop is not converging",
-    };
+    return escalate(
+      "the same findings came back unchanged, so the loop is not converging",
+      blocking,
+    );
   }
 
   return { kind: "advance", state: review.fix };
 }
 
+function escalate(reason: string, blocking: Finding[]): Decision {
+  const listed = blocking.map((finding) => `${finding.severity}: ${finding.what}`).join("; ");
+
+  return {
+    kind: "pause",
+    state: "PAUSED_WAITING_USER",
+    reason,
+    question: `${reason}. Please look at: ${listed}`,
+  };
+}
+
 function repeatsLastRound(checkpoint: Checkpoint, blocking: Finding[]): boolean {
-  const previous = checkpoint.lastFindings;
+  const previous = checkpoint.lastFindings?.[checkpoint.state];
 
   if (previous === undefined || previous.length === 0) {
     return false;

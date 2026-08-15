@@ -40,8 +40,12 @@ export async function runJob(request: RunRequest): Promise<RunResult> {
   for (let step = 0; step < limit; step += 1) {
     const checkpoint = current(job);
 
-    if (isTerminal(checkpoint.state) || checkpoint.state === request.stopBefore) {
-      return { state: checkpoint.state };
+    if (
+      isTerminal(checkpoint.state) ||
+      checkpoint.state === "FAILED" ||
+      checkpoint.state === request.stopBefore
+    ) {
+      return { state: checkpoint.state, reason: checkpoint.lastError };
     }
 
     const decision = isPaused(checkpoint.state)
@@ -97,6 +101,11 @@ function apply(job: Job, decision: Decision): RunResult | undefined {
   }
 
   note(job, { resumeAt: decision.resumeAt, lastError: decision.reason });
+
+  if (decision.state === "PAUSED_WAITING_USER") {
+    clearLoop(job);
+  }
+
   job.advanceTo(decision.state);
 
   return {
@@ -105,6 +114,19 @@ function apply(job: Job, decision: Decision): RunResult | undefined {
     resumeAt: decision.resumeAt,
     reason: decision.reason,
   };
+}
+
+function clearLoop(job: Job): void {
+  const checkpoint = current(job);
+  const cycles = { ...checkpoint.cycles };
+  const findings = { ...checkpoint.lastFindings };
+
+  for (const state of ["FIX", "IR_FIX"] as const) {
+    delete cycles[state];
+    delete findings[state === "FIX" ? "CODE_REVIEW" : "REPORT_REVIEW"];
+  }
+
+  job.writeCheckpoint({ ...checkpoint, cycles, lastFindings: findings });
 }
 
 function stall(job: Job, limit: number): RunResult {
@@ -131,7 +153,10 @@ function remember(job: Job, checkpoint: Checkpoint, outcome: AgentOutcome): void
     ...checkpoint,
     sessionIds: { ...checkpoint.sessionIds, [checkpoint.state]: outcome.sessionId },
     ...(outcome.findings !== undefined && {
-      lastFindings: blockingFindings(outcome.findings).map((finding) => finding.id),
+      lastFindings: {
+        ...checkpoint.lastFindings,
+        [checkpoint.state]: blockingFindings(outcome.findings).map((finding) => finding.id),
+      },
     }),
   });
 }
