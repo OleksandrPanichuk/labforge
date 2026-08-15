@@ -1,8 +1,18 @@
+import { z } from "zod";
+import { ConfigError } from "./errors";
 import type { ConfigFiles } from "./files";
 import { parseFrontmatter } from "./frontmatter";
 
 export const REQUIREMENTS_FILE = "REQUIREMENTS.md";
 export const STYLE_GUIDE_FILE = "STYLE_GUIDE.md";
+
+const SEGMENT_RE = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
+const COMMENT_OPEN_RE = /<!--/g;
+
+const segmentSchema = z
+  .string()
+  .regex(SEGMENT_RE)
+  .refine((value) => value !== "." && value !== "..");
 
 export interface ResolveRequest {
   subject?: string;
@@ -18,16 +28,14 @@ export interface ResolvedConfigs {
   };
 }
 
-export class ConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
-  }
-}
+export { ConfigError };
 
 export function resolveConfigs(request: ResolveRequest, files: ConfigFiles): ResolvedConfigs {
-  const requirements = layersOf(REQUIREMENTS_FILE, request, files);
-  const styleGuide = layersOf(STYLE_GUIDE_FILE, request, files);
+  const subject = directorySegment("subjects", request.subject, files);
+  const teacher = directorySegment("teachers", request.teacher, files);
+
+  const requirements = layersOf(REQUIREMENTS_FILE, subject, teacher, files);
+  const styleGuide = layersOf(STYLE_GUIDE_FILE, subject, teacher, files);
 
   return {
     requirements: merge(REQUIREMENTS_FILE, requirements, files),
@@ -38,48 +46,82 @@ export function resolveConfigs(request: ResolveRequest, files: ConfigFiles): Res
 
 export function findTeacherSlug(name: string, files: ConfigFiles): string | undefined {
   const wanted = normalise(name);
-
-  return files
+  const matches = files
     .listDirectories("teachers")
-    .find((slug) => normalise(slug) === wanted || declaredNames(slug, files).includes(wanted));
-}
+    .filter((slug) => normalise(slug) === wanted || declaredNames(slug, files).includes(wanted));
 
-function layersOf(file: string, request: ResolveRequest, files: ConfigFiles): string[] {
-  const candidates = [file];
-
-  if (request.subject !== undefined) {
-    candidates.push(`subjects/${request.subject}/${file}`);
+  if (matches.length > 1) {
+    throw new ConfigError(
+      `"${name}" matches more than one teacher: ${matches.join(", ")}; make the aliases unique`,
+    );
   }
 
-  if (request.teacher !== undefined) {
-    candidates.push(`teachers/${request.teacher}/${file}`);
+  return matches[0];
+}
 
-    if (request.subject !== undefined) {
-      candidates.push(`teachers/${request.teacher}/subjects/${request.subject}/${file}`);
+function directorySegment(
+  kind: "subjects" | "teachers",
+  value: string | undefined,
+  files: ConfigFiles,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!segmentSchema.safeParse(value).success) {
+    throw new ConfigError(`"${value}" is not a valid ${kind} name`);
+  }
+
+  const present = files.listDirectories(kind);
+  const sameName = present.find((name) => name.toLowerCase() === value.toLowerCase());
+
+  if (sameName !== undefined && sameName !== value) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function layersOf(
+  file: string,
+  subject: string | undefined,
+  teacher: string | undefined,
+  files: ConfigFiles,
+): string[] {
+  if (!files.exists(file)) {
+    throw new ConfigError(`The base ${file} is required and was not found`);
+  }
+
+  const candidates = [file];
+
+  if (subject !== undefined) {
+    candidates.push(`subjects/${subject}/${file}`);
+  }
+
+  if (teacher !== undefined) {
+    candidates.push(`teachers/${teacher}/${file}`);
+
+    if (subject !== undefined) {
+      candidates.push(`teachers/${teacher}/subjects/${subject}/${file}`);
     }
   }
 
-  const present = candidates.filter((path) => files.exists(path));
-
-  if (present.length === 0) {
-    throw new ConfigError(`No ${file} found; the base configs/${file} is required`);
-  }
-
-  return present;
+  return candidates.filter((path) => files.exists(path));
 }
 
 function merge(file: string, paths: string[], files: ConfigFiles): string {
   const sections = paths.map((path, index) => {
     const body = parseFrontmatter(files.read(path)).body.trim();
-    const rank = index === paths.length - 1 && paths.length > 1 ? " (highest priority)" : "";
 
-    return `<!-- ${path}${rank} -->\n\n${body}`;
+    return `## Layer ${index + 1} of ${paths.length} — ${path}\n\n${neutralise(body)}`;
   });
 
   return [header(file, paths), ...sections].join("\n\n");
 }
 
 function header(file: string, paths: string[]): string {
+  const last = paths[paths.length - 1];
+
   if (paths.length === 1) {
     return `# ${file}`;
   }
@@ -87,9 +129,13 @@ function header(file: string, paths: string[]): string {
   return [
     `# ${file}`,
     "",
-    "Layers are ordered from general to specific. When two layers conflict, the later one",
-    `wins; the last layer below has the highest priority (${paths[paths.length - 1]}).`,
+    `Layers run from general to specific. Where two layers conflict the later one wins, so`,
+    `layer ${paths.length} (${last}) has the highest priority.`,
   ].join("\n");
+}
+
+function neutralise(body: string): string {
+  return body.replace(COMMENT_OPEN_RE, "<!‑-");
 }
 
 function declaredNames(slug: string, files: ConfigFiles): string[] {
@@ -119,5 +165,5 @@ function valuesOf(value: string | string[] | undefined): string[] {
 }
 
 function normalise(value: string): string {
-  return value.trim().toLowerCase();
+  return value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase("uk");
 }

@@ -1,7 +1,7 @@
+export { ConfigError } from "./errors";
 export { type ConfigFiles, configFilesAt } from "./files";
 export { type Frontmatter, type FrontmatterValue, parseFrontmatter } from "./frontmatter";
 export {
-  ConfigError,
   findTeacherSlug,
   REQUIREMENTS_FILE,
   type ResolvedConfigs,
