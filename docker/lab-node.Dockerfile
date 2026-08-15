@@ -1,0 +1,4 @@
+FROM node:22-slim
+
+USER 1000:1000
+WORKDIR /job

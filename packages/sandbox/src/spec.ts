@@ -1,3 +1,7 @@
+import { BUILD_MOUNT, JOB_MOUNT } from "./mounts";
+import { RUNTIMES, type RuntimeId } from "./runtime";
+
+export { BUILD_MOUNT, JOB_MOUNT };
 export const LIMITS = {
   memoryBytes: 1024 * 1024 * 1024,
   nanoCpus: 1_000_000_000,
@@ -7,10 +11,9 @@ export const LIMITS = {
   tmpfsSize: "size=64m",
 } as const;
 
-export const JOB_MOUNT = "/job";
-
 export interface SandboxRunRequest {
-  image: string;
+  image?: string;
+  runtime?: RuntimeId;
   cmd: string[];
   jobDir: string;
   workdir?: string;
@@ -41,22 +44,16 @@ export interface ContainerSpec {
   };
 }
 
-const CACHE_ENV = {
-  HOME: "/tmp",
-  MPLCONFIGDIR: "/tmp/matplotlib",
-  PYTHONDONTWRITEBYTECODE: "1",
-  PYTHONPATH: JOB_MOUNT,
-};
-
 export function buildContainerSpec(request: SandboxRunRequest): ContainerSpec {
   if (!request.jobDir.startsWith("/")) {
     throw new Error(`jobDir must be an absolute path, got "${request.jobDir}"`);
   }
 
-  const env = { ...CACHE_ENV, ...request.env };
+  const runtime = RUNTIMES[request.runtime ?? "python"];
+  const env = { ...runtime.env, ...request.env };
 
   return {
-    Image: request.image,
+    Image: request.image ?? runtime.image,
     Cmd: request.cmd,
     WorkingDir: request.workdir ?? JOB_MOUNT,
     User: LIMITS.user,
@@ -72,6 +69,7 @@ export function buildContainerSpec(request: SandboxRunRequest): ContainerSpec {
       Binds: [
         `${request.jobDir}:${JOB_MOUNT}:ro`,
         `${request.jobDir}/artifacts:${JOB_MOUNT}/artifacts:rw`,
+        `${request.jobDir}/build:${BUILD_MOUNT}:rw`,
       ],
       Tmpfs: { "/tmp": `rw,${LIMITS.tmpfsSize}` },
       CapDrop: ["ALL"],

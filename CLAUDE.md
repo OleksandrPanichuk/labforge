@@ -14,7 +14,7 @@ Pipeline: lab task file → agent loop (Claude Agent SDK) → lab code + Report 
 - **DB:** PostgreSQL + Prisma. JSON documents (IR, checkpoint meta) live in JSONB columns. Do NOT add Mongo.
 - **Frontend:** TanStack Start. Live updates: SSE (not WebSocket). Preview: Paged.js + KaTeX + CodeMirror 6 (read-only).
 - **docx:** the `docx` library. Formulas: temml (LaTeX→MathML) → OMML, fallback PNG 300 dpi.
-- **Sandbox:** Docker via dockerode. Agents get NO direct `Bash(docker …)` — only the custom tool `run_in_sandbox`.
+- **Sandbox:** Docker via dockerode, one image per lab language (`lab-python`, `lab-node`, `lab-cpp`, `lab-java`). The runtime profile — image, how to run a cell, how a cell reaches `src/` — is chosen from the lab's language, never by the agent. Agents get NO direct `Bash(docker …)` — only the custom tool `run_in_sandbox`.
 - **Telegram:** grammY.
 - **Logging:** `@labforge/logger` (pino).
 
@@ -47,7 +47,7 @@ docs/              # architecture documentation
 3. **`src/` holds clean lab code** (what gets submitted to the teacher). `cells/` import from `src/`; copying logic is forbidden. Report-only value printing never lands in `src/`.
 4. **Orchestration is deterministic.** "Should the review loop continue?" is decided by stop rules in code (max 3 cycles; no findings of severity ≥ major; identical findings twice in a row → escalate to the user). No LLM "managers".
 5. **Every state is rerunnable from files.** A state's input is the files in `jobs/<id>/`, never the memory of a previous session. After each state: `checkpoint.json` + a git commit of the job directory.
-6. **Sandbox:** `--network none` by default, memory 1g, cpus 1, pids 256, timeout 120 s, non-root, read-only job mount + writable `artifacts/`. Network access only via an explicit per-job flag.
+6. **Sandbox:** `--network none` by default, memory 1g, cpus 1, pids 256, timeout 120 s, non-root, read-only job mount + writable `artifacts/` and `build/` (compiled runtimes need somewhere for object files, and the job tree is read-only). Network access only via an explicit per-job flag.
 7. **Inline HTML in IR `text`** — allowlist only: `b i u sub sup span[data-x]`. Both renderers sanitize.
 8. **A user sees only their own jobs.** `kb/` and `data/` are shared; `jobs/` are isolated per userId.
 

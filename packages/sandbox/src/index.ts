@@ -7,12 +7,14 @@ export {
   type SandboxEngine,
   type SandboxRunResult,
 } from "./run";
+export { CELL_REF_RE, RUNTIMES, type Runtime, type RuntimeId, runtimeFor } from "./runtime";
 export {
   DOCKER_SOCKET_CANDIDATES,
   type PathProbe,
   resolveDockerSocket,
 } from "./socket";
 export {
+  BUILD_MOUNT,
   buildContainerSpec,
   type ContainerSpec,
   JOB_MOUNT,

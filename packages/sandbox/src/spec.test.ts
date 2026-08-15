@@ -34,6 +34,7 @@ describe("buildContainerSpec", () => {
     expect(spec.HostConfig.Binds).toEqual([
       "/jobs/job_1:/job:ro",
       "/jobs/job_1/artifacts:/job/artifacts:rw",
+      "/jobs/job_1/build:/build:rw",
     ]);
   });
 
