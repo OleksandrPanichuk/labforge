@@ -125,7 +125,7 @@ function frontmatter(meta: IngestMeta): string {
     "---",
     `source: ${JSON.stringify(meta.source)}`,
     `format: ${meta.format}`,
-    `ingestedAt: ${meta.ingestedAt}`,
+    `ingestedAt: ${JSON.stringify(meta.ingestedAt)}`,
     "---",
   ].join("\n");
 }

@@ -2,15 +2,12 @@ import { strFromU8, unzipSync } from "fflate";
 import { IngestError } from "./errors";
 
 const DOCUMENT_PART = "word/document.xml";
-const PARAGRAPH_RE = /<w:p(?:\s[^>]*)?>([\s\S]*?)<\/w:p>/g;
-const ROW_RE = /<w:tr\b[^>]*>([\s\S]*?)<\/w:tr>/g;
-const CELL_RE = /<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/g;
-const TOKEN_RE = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:(br|cr|tab)\b[^>]*\/?>/g;
+
+export const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;
+
+const HEADING_STYLE_RE = /^(?:heading|заголовок|überschrift)\s*(\d)$/i;
 const STYLE_RE = /<w:pStyle\s+w:val="([^"]+)"/;
 const OUTLINE_RE = /<w:outlineLvl\s+w:val="(\d+)"/;
-const HEADING_STYLE_RE = /^(?:heading|заголовок|überschrift)\s*(\d)$/i;
-const TABLE_RE = /<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>/g;
-const NESTED_TABLE_RE = /<w:tbl\b/g;
 const NUMERIC_ENTITY_RE = /&#(x?)([0-9a-fA-F]+);/g;
 
 const ENTITIES: Record<string, string> = {
@@ -22,17 +19,21 @@ const ENTITIES: Record<string, string> = {
   "&nbsp;": " ",
 };
 
+interface Element {
+  inner: string;
+  start: number;
+  end: number;
+}
+
 export function docxToMarkdown(bytes: Buffer): string {
   const document = documentPart(bytes);
   const blocks: string[] = [];
   let cursor = 0;
 
-  for (const match of document.matchAll(new RegExp(TABLE_RE.source, "g"))) {
-    const index = match.index ?? 0;
-
-    blocks.push(...paragraphsOf(document.slice(cursor, index)));
-    blocks.push(tableOf(match[0]));
-    cursor = index + match[0].length;
+  for (const table of elements(document, "w:tbl")) {
+    blocks.push(...paragraphsOf(document.slice(cursor, table.start)));
+    blocks.push(tableOf(table.inner));
+    cursor = table.end;
   }
 
   blocks.push(...paragraphsOf(document.slice(cursor)));
@@ -44,24 +45,94 @@ function documentPart(bytes: Buffer): string {
   let entry: Uint8Array | undefined;
 
   try {
-    entry = unzipSync(new Uint8Array(bytes), { filter: (file) => file.name === DOCUMENT_PART })[
-      DOCUMENT_PART
-    ];
+    entry = unzipSync(new Uint8Array(bytes), {
+      filter: (file) => file.name === DOCUMENT_PART && file.originalSize <= MAX_DOCUMENT_BYTES,
+    })[DOCUMENT_PART];
   } catch {
     throw new IngestError("The file is not a readable .docx archive");
   }
 
   if (entry === undefined) {
-    throw new IngestError(`The .docx has no ${DOCUMENT_PART} part`);
+    throw new IngestError(
+      `The .docx has no readable ${DOCUMENT_PART} within ${MAX_DOCUMENT_BYTES} bytes`,
+    );
+  }
+
+  if (entry.length > MAX_DOCUMENT_BYTES) {
+    throw new IngestError(`${DOCUMENT_PART} is larger than ${MAX_DOCUMENT_BYTES} bytes`);
   }
 
   return strFromU8(entry);
 }
 
+function elements(xml: string, name: string): Element[] {
+  const closing = `</${name}>`;
+  const found: Element[] = [];
+  let cursor = 0;
+
+  while (cursor < xml.length) {
+    const open = openingTag(xml, name, cursor);
+
+    if (open === undefined) {
+      break;
+    }
+
+    const closes = xml.indexOf(closing, open.contentStart);
+
+    if (closes === -1) {
+      break;
+    }
+
+    found.push({
+      inner: xml.slice(open.contentStart, closes),
+      start: open.start,
+      end: closes + closing.length,
+    });
+    cursor = closes + closing.length;
+  }
+
+  return found;
+}
+
+function openingTag(
+  xml: string,
+  name: string,
+  from: number,
+): { start: number; contentStart: number } | undefined {
+  let cursor = from;
+
+  while (cursor < xml.length) {
+    const start = xml.indexOf(`<${name}`, cursor);
+
+    if (start === -1) {
+      return undefined;
+    }
+
+    const closes = xml.indexOf(">", start);
+
+    if (closes === -1) {
+      return undefined;
+    }
+
+    const boundary = xml[start + name.length + 1] ?? "";
+
+    if (boundary === ">" || boundary === " " || boundary === "\n" || boundary === "\t") {
+      if (xml[closes - 1] === "/") {
+        cursor = closes + 1;
+        continue;
+      }
+
+      return { start, contentStart: closes + 1 };
+    }
+
+    cursor = start + name.length + 1;
+  }
+
+  return undefined;
+}
+
 function paragraphsOf(xml: string): string[] {
-  return [...xml.matchAll(new RegExp(PARAGRAPH_RE.source, "g"))].map((match) =>
-    paragraphToMarkdown(match[1] ?? ""),
-  );
+  return elements(xml, "w:p").map((paragraph) => paragraphToMarkdown(paragraph.inner));
 }
 
 function paragraphToMarkdown(xml: string): string {
@@ -93,16 +164,14 @@ function headingLevel(xml: string): number | undefined {
 }
 
 function tableOf(xml: string): string {
-  if ((xml.match(NESTED_TABLE_RE) ?? []).length > 1) {
+  if (xml.includes("<w:tbl>") || xml.includes("<w:tbl ")) {
     throw new IngestError(
       "The .docx contains a nested table, which cannot be converted without losing its structure",
     );
   }
 
-  const rows = [...xml.matchAll(new RegExp(ROW_RE.source, "g"))].map((match) =>
-    [...(match[1] ?? "").matchAll(new RegExp(CELL_RE.source, "g"))].map((cell) =>
-      escapePipes(cellText(cell[1] ?? "")),
-    ),
+  const rows = elements(xml, "w:tr").map((row) =>
+    elements(row.inner, "w:tc").map((cell) => escapePipes(cellText(cell.inner))),
   );
 
   const header = rows[0];
@@ -131,9 +200,7 @@ function row(cells: string[], width: number): string {
 }
 
 function cellText(xml: string): string {
-  const paragraphs = [...xml.matchAll(new RegExp(PARAGRAPH_RE.source, "g"))].map((match) =>
-    textOf(match[1] ?? ""),
-  );
+  const paragraphs = elements(xml, "w:p").map((paragraph) => textOf(paragraph.inner));
 
   if (paragraphs.length === 0) {
     return textOf(xml);
@@ -143,14 +210,54 @@ function cellText(xml: string): string {
 }
 
 function textOf(xml: string): string {
-  return [...xml.matchAll(new RegExp(TOKEN_RE.source, "g"))]
-    .map((match) => (match[2] === undefined ? decode(match[1] ?? "") : whitespaceFor(match[2])))
-    .join("")
-    .trim();
+  let text = "";
+  let cursor = 0;
+
+  while (cursor < xml.length) {
+    const opens = xml.indexOf("<", cursor);
+
+    if (opens === -1) {
+      break;
+    }
+
+    const closes = xml.indexOf(">", opens);
+
+    if (closes === -1) {
+      break;
+    }
+
+    const name = tagName(xml.slice(opens + 1, closes));
+
+    if (name === "w:t") {
+      const ends = xml.indexOf("</w:t>", closes);
+
+      if (ends === -1) {
+        break;
+      }
+
+      text += decode(xml.slice(closes + 1, ends));
+      cursor = ends + "</w:t>".length;
+      continue;
+    }
+
+    if (name === "w:br" || name === "w:cr") {
+      text += "\n";
+    }
+
+    if (name === "w:tab") {
+      text += "\t";
+    }
+
+    cursor = closes + 1;
+  }
+
+  return text.trim();
 }
 
-function whitespaceFor(token: string): string {
-  return token === "tab" ? "\t" : "\n";
+function tagName(tag: string): string {
+  const end = tag.search(/[\s/>]/);
+
+  return end === -1 ? tag : tag.slice(0, end);
 }
 
 function escapePipes(text: string): string {

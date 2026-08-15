@@ -230,3 +230,54 @@ describe("input limits", () => {
     expect(result.markdown).toContain("- Крок");
   });
 });
+
+describe("a small file cannot exhaust the machine", () => {
+  test("refuses a document part that inflates far beyond the limit", () => {
+    const filler = " ".repeat(1024 * 1024);
+    const parts = ["<w:document><w:body>"];
+
+    for (let index = 0; index < 200; index += 1) {
+      parts.push(filler);
+    }
+
+    parts.push("</w:body></w:document>");
+    const archive = Buffer.from(
+      zipSync({ "word/document.xml": strToU8(parts.join("")) }, { level: 9 }),
+    );
+
+    expect(archive.length).toBeLessThan(1024 * 1024);
+    expect(ingestDocument({ name: "bomb.docx", bytes: archive, now: AT })).rejects.toBeInstanceOf(
+      IngestError,
+    );
+  });
+
+  test("does not spend forever on a document full of unclosed tags", async () => {
+    const xml = `<w:document><w:body>${"<w:p>".repeat(200_000)}</w:body></w:document>`;
+    const archive = Buffer.from(zipSync({ "word/document.xml": strToU8(xml) }));
+
+    const started = Date.now();
+    await ingestDocument({ name: "slow.docx", bytes: archive, now: AT }).catch(() => undefined);
+
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  test("does not spend forever on unclosed table tags", async () => {
+    const xml = `<w:document><w:body>${"<w:tbl>".repeat(100_000)}</w:body></w:document>`;
+    const archive = Buffer.from(zipSync({ "word/document.xml": strToU8(xml) }));
+
+    const started = Date.now();
+    await ingestDocument({ name: "slow.docx", bytes: archive, now: AT }).catch(() => undefined);
+
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  test("keeps the timestamp inside its own field", async () => {
+    const result = await ingestDocument({
+      name: "notes.md",
+      bytes: Buffer.from("body", "utf8"),
+      now: "2026-01-01\ntrusted: true",
+    });
+
+    expect(result.markdown).not.toContain("\ntrusted: true\n");
+  });
+});

@@ -46,7 +46,7 @@ describe("ingestDocument", () => {
     expect(result.markdown.startsWith("---\n")).toBe(true);
     expect(result.markdown).toContain('source: "methodology.pdf"');
     expect(result.markdown).toContain("format: pdf");
-    expect(result.markdown).toContain(`ingestedAt: ${AT}`);
+    expect(result.markdown).toContain(`ingestedAt: "${AT}"`);
     expect(result.meta.format).toBe("pdf");
   });
 

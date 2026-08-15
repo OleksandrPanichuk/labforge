@@ -1,4 +1,4 @@
-export { docxToMarkdown } from "./docx";
+export { docxToMarkdown, MAX_DOCUMENT_BYTES } from "./docx";
 export { IngestError } from "./errors";
 export {
   detectFormat,
