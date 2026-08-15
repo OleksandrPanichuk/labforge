@@ -1,15 +1,25 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import {
-  type FileProbe,
-  type ReportIR,
-  reportIR,
-  type ValidationIssue,
-  validateReport,
-} from "@labforge/ir";
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { type ReportIR, reportIR, type ValidationIssue, validateReport } from "@labforge/ir";
 import type { Job } from "@labforge/jobs";
 import { renderReport } from "@labforge/renderer-docx";
-import { type CellRunner, type CellRunRecord, resolveValues } from "@labforge/resolver";
+import {
+  type CellRunner,
+  type CellRunRecord,
+  type ResolveIssue,
+  resolveValues,
+} from "@labforge/resolver";
+import { generatedArtifacts, jobProbe } from "./probe";
 
 export type BuildStage = "read" | "validate" | "resolve" | "verify" | "render";
 
@@ -41,35 +51,53 @@ export interface BuildResult {
 
 export async function buildReport(request: BuildRequest): Promise<BuildResult> {
   const { job } = request;
+  const docxPath = join(job.dir, DOCX_FILE);
   const document = readReport(job.reportPath);
+  const pending = generatedArtifacts(document);
   const warnings: ValidationIssue[] = [];
 
-  warnings.push(...check(document, "validate", { phase: "pre-resolve" }));
-
-  const resolved = await resolveValues(document, request.cells, {
-    decimalSeparator: request.decimalSeparator,
-  });
-
-  if (resolved.errors.length > 0) {
-    throw new BuildError("resolve", resolved.errors.map((issue) => issue.message).join("; "));
-  }
-
-  writeRunLogs(job, resolved.runs);
-  warnings.push(
-    ...check(resolved.ir, "verify", { phase: "post-resolve", files: jobProbe(job.dir) }),
-  );
-
-  writeFileSync(job.reportPath, `${JSON.stringify(resolved.ir, null, 2)}\n`, "utf8");
-
-  const docxPath = join(job.dir, DOCX_FILE);
-
   try {
-    writeFileSync(docxPath, await renderReport(resolved.ir, { jobDir: job.dir }));
+    warnings.push(
+      ...check(document, "validate", {
+        phase: "pre-resolve",
+        files: jobProbe(job.dir, pending),
+      }),
+    );
+
+    const resolved = await resolveValues(document, request.cells, {
+      decimalSeparator: request.decimalSeparator,
+    });
+
+    writeRunLogs(job, resolved.runs);
+
+    if (resolved.errors.length > 0) {
+      throw new BuildError(
+        "resolve",
+        resolved.errors.map((issue) => issue.message).join("; "),
+        resolved.errors.map(asValidationIssue),
+      );
+    }
+
+    check(resolved.ir, "verify", { phase: "post-resolve", files: jobProbe(job.dir) });
+
+    const docx = await render(resolved.ir, job.dir);
+
+    writeAtomically(job.reportPath, `${JSON.stringify(resolved.ir, null, 2)}\n`);
+    writeAtomically(docxPath, docx);
+
+    return { docxPath, ir: resolved.ir, runs: resolved.runs, warnings: dedupe(warnings) };
+  } catch (error) {
+    rmSync(docxPath, { force: true });
+    throw error;
+  }
+}
+
+async function render(document: ReportIR, jobDir: string): Promise<Buffer> {
+  try {
+    return await renderReport(document, { jobDir });
   } catch (error) {
     throw new BuildError("render", error instanceof Error ? error.message : String(error));
   }
-
-  return { docxPath, ir: resolved.ir, runs: resolved.runs, warnings };
 }
 
 function readReport(path: string): ReportIR {
@@ -100,9 +128,15 @@ function readReport(path: string): ReportIR {
 function check(
   document: ReportIR,
   stage: BuildStage,
-  options: { phase: "pre-resolve" | "post-resolve"; files?: FileProbe },
+  options: Parameters<typeof validateReport>[1],
 ): ValidationIssue[] {
-  const result = validateReport(document, options);
+  let result: ReturnType<typeof validateReport>;
+
+  try {
+    result = validateReport(document, options);
+  } catch (error) {
+    throw new BuildError(stage, error instanceof Error ? error.message : String(error));
+  }
 
   if (!result.ok) {
     throw new BuildError(
@@ -117,16 +151,48 @@ function check(
 
 function writeRunLogs(job: Job, runs: CellRunRecord[]): void {
   for (const run of runs) {
-    writeFileSync(join(job.dir, run.runRef), `${JSON.stringify(run, null, 2)}\n`, "utf8");
+    const target = join(job.dir, run.runRef);
+
+    mkdirSync(dirname(target), { recursive: true });
+    writeAtomically(target, `${JSON.stringify(run, null, 2)}\n`);
   }
 }
 
-function jobProbe(jobDir: string): FileProbe {
+function writeAtomically(path: string, content: string | Buffer): void {
+  const temporary = `${path}.tmp`;
+  const file = openSync(temporary, "w");
+
+  try {
+    writeSync(file, content as never);
+    fsyncSync(file);
+  } finally {
+    closeSync(file);
+  }
+
+  renameSync(temporary, path);
+}
+
+function asValidationIssue(issue: ResolveIssue): ValidationIssue {
   return {
-    exists: (relativePath) => existsSync(join(jobDir, relativePath)),
-    countLines: (relativePath) =>
-      readFileSync(join(jobDir, relativePath), "utf8")
-        .replace(/\r?\n$/, "")
-        .split(/\r?\n/).length,
+    rule: issue.rule,
+    severity: "error",
+    message: issue.message,
+    ...(issue.key !== undefined && { key: issue.key }),
   };
+}
+
+function dedupe(issues: ValidationIssue[]): ValidationIssue[] {
+  const seen = new Set<string>();
+
+  return issues.filter((issue) => {
+    const key = `${issue.rule}|${issue.blockId ?? ""}|${issue.key ?? ""}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+
+    return true;
+  });
 }
