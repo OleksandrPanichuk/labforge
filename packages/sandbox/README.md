@@ -25,7 +25,8 @@ const result = await runInSandbox(
 | Користувач | `1000:1000`, `CapDrop: ALL`, `no-new-privileges` |
 | Монтування | `<jobDir>:/job:ro` + `<jobDir>/artifacts:/job/artifacts:rw` |
 | Scratch | tmpfs `/tmp` (64 MB); `HOME`, `MPLCONFIGDIR` вказують туди ж |
-| Import path | `PYTHONPATH=/job` — інакше `cells/x.py` не бачить `src/` (інваріант 3) |
+| Import path | з runtime-профілю: `PYTHONPATH`, `NODE_PATH`, `CLASSPATH`, `CPLUS_INCLUDE_PATH` — інакше cell не бачить `src/` (інваріант 3) |
+| Build output | `/build` (writable) — для C++/Java, бо `/job` read-only |
 
 `Tty` вимкнено навмисно: інакше Docker зливає stdout і stderr в один потік, і попередження
 інтерпретатора ламають JSON, який resolver читає зі stdout. Кадри розбирає `demuxDockerStream`.
@@ -36,6 +37,20 @@ const result = await runInSandbox(
 dockerode) → `LABFORGE_DOCKER_SOCKET` → `/var/run/docker.sock` → OrbStack → Docker Desktop →
 Colima. Дефолт dockerode (`/var/run/docker.sock`) не працює на macOS з OrbStack чи Colima,
 де цього файлу просто нема.
+
+## Runtime-профілі
+
+Лаба може бути на Python, C++, Java чи JS, тому мову знає **профіль**, а не sandbox і не агент:
+
+```ts
+const runtime = runtimeFor(task.language);   // "C++" -> cpp
+await runInSandbox({ image: runtime.image, runtime: runtime.id,
+                     cmd: runtime.cellCommand("cells/metrics.cpp"), jobDir }, engine);
+```
+
+Профіль тримає три речі, які і є всією різницею між мовами: образ, команду запуску cell
+(для компільованих — компіляція + запуск одним `sh -c`) і те, як cell дістає `src/`.
+Невідома мова — помилка, а не мовчазний дефолт у Python.
 
 ## Стан перевірки
 

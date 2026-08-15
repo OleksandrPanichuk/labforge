@@ -16,7 +16,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "ingest": "bun packages/ingest/src/main.ts"
+    "ingest": "bun packages/ingest/src/main.ts",
+    "images:build": "for f in docker/lab-*.Dockerfile; do n=$(basename $f .Dockerfile); docker build -f $f -t $n . || exit 1; done"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

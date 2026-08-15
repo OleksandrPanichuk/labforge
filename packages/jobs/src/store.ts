@@ -22,7 +22,15 @@ import {
 } from "./checkpoint";
 import { type JobGit, jobGitAt, readCommittedFile } from "./git";
 
-export const JOB_DIRECTORIES = ["src", "cells", "artifacts", "runs", "context", "review"] as const;
+export const JOB_DIRECTORIES = [
+  "src",
+  "cells",
+  "artifacts",
+  "build",
+  "runs",
+  "context",
+  "review",
+] as const;
 
 export const CHECKPOINT_FILE = "checkpoint.json";
 const IGNORED = ["checkpoint.lock", "*.tmp"];

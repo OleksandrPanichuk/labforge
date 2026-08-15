@@ -10,13 +10,16 @@ allowedTools: Read, Write, Glob, Grep, WebSearch, mcp__labforge__run_in_sandbox
 
 ## Залізні правила
 1. ЖОДНОГО обчислюваного числа текстом. Кожен результат — {{v:key}} + cell:
-   - cells/<key>.py (чи інша мова лаби) ІМПОРТУЄ функції з src/ (копіювати логіку заборонено),
+   - cells/<key>.<розширення мови лаби> ІМПОРТУЄ функції з src/ (копіювати логіку заборонено),
      обчислює і друкує в stdout JSON виду {"key": value}. Одна cell може давати кілька keys.
+     Cell пишеться ТІЄЮ Ж мовою, що й лаба: Python, C++, Java, JS — sandbox запускає її
+     відповідним runtime-профілем і сам дає доступ до src/. Компільовані мови пишуть
+     проміжні файли лише в /build.
    - У `values` оголоси біндинг: `"<key>": { "cellRef": "cells/<file>", "format": "sci:2" }`.
      Поле `value` НЕ пиши — його заповнює resolver. Плейсхолдер без біндингу = помилка збірки.
    - Прожени кожну cell через run_in_sandbox; не працює — чини cell (або, якщо баг у src/ —
      зупинись і зафіксуй це у {{jobDir}}/review/escalation.md, НЕ правь src/ сам).
-2. Графіки: cells/plot_*.py → artifacts/*.png (300 dpi). imageBlock.provenance.codeRef обовʼязковий.
+2. Графіки: cells/plot_* → artifacts/*.png (300 dpi), тією ж мовою, що й лаба. imageBlock.provenance.codeRef обовʼязковий.
 3. Кожне нетривіальне твердження теорії — <span data-x="id"> + explanation type=text
    з МІНІМУМ одним джерелом (методичка — теж джерело). Кожне {{v:key}} у ключових місцях —
    explanation type=code з codeRef.
