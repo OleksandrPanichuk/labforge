@@ -15,12 +15,17 @@
     "test": "turbo run test",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "ingest": "bun packages/ingest/src/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
     "@types/node": "^26.2.0",
     "turbo": "^2.10.10",
     "typescript": "^5.9"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "unpdf": "^1.8.1"
   }
 }
