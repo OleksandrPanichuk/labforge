@@ -79,6 +79,15 @@ describe("images", () => {
     );
   });
 
+  test("refuses a width outside the sensible range", () => {
+    expect(
+      renderReport(makeIR({ blocks: [{ ...image, width: "0%" }] }), { files: jobFiles }),
+    ).rejects.toThrow(/width/i);
+    expect(
+      renderReport(makeIR({ blocks: [{ ...image, width: "150%" }] }), { files: jobFiles }),
+    ).rejects.toThrow(/width/i);
+  });
+
   test("fails when no file access was configured", () => {
     expect(renderReport(makeIR({ blocks: [image] }))).rejects.toThrow(/jobDir/i);
   });
@@ -126,6 +135,25 @@ describe("code listings", () => {
     const xml = await documentXml([listing], files({ "src/solver.py": "if a < b and c > d:" }));
 
     expect(xml).toContain("if a &lt; b and c &gt; d:");
+  });
+
+  test("refuses a reversed line range instead of rendering nothing", () => {
+    expect(
+      renderReport(makeIR({ blocks: [{ ...listing, lines: [3, 2] }] }), { files: jobFiles }),
+    ).rejects.toThrow(/line range/i);
+  });
+
+  test("refuses a line range that runs past the end of the file", () => {
+    expect(
+      renderReport(makeIR({ blocks: [{ ...listing, lines: [1, 500] }] }), { files: jobFiles }),
+    ).rejects.toThrow(/line range/i);
+  });
+
+  test("strips carriage returns so they cannot leak into the document", async () => {
+    const xml = await documentXml([listing], files({ "src/solver.py": "first\r\nsecond\r\n" }));
+
+    expect(xml).not.toContain("\r");
+    expect(xml).toContain(">first</w:t>");
   });
 
   test("fails loudly when the source file is missing", () => {

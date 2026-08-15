@@ -55,13 +55,21 @@ export function renderPageBreak(): Paragraph[] {
 }
 
 function selectLines(content: string, range: readonly [number, number] | undefined): string[] {
-  const lines = content.replace(/\n$/, "").split("\n");
+  const lines = content.replace(/\r?\n$/, "").split(/\r?\n/);
 
   if (range === undefined) {
     return lines;
   }
 
-  return lines.slice(range[0] - 1, range[1]);
+  const [from, to] = range;
+
+  if (from < 1 || to < from || to > lines.length) {
+    throw new RenderError(
+      `Line range ${from}-${to} does not fit the file, which has ${lines.length} lines`,
+    );
+  }
+
+  return lines.slice(from - 1, to);
 }
 
 function captionBelow(caption: string | undefined, context: BlockContext): Paragraph[] {
@@ -90,17 +98,22 @@ function filesOf(context: BlockContext): JobFiles {
 
 function fractionOf(width: string): number {
   const percent = PERCENT_RE.exec(width)?.[1];
+  const fraction = percent === undefined ? Number.NaN : Number(percent) / 100;
 
-  if (percent === undefined) {
-    throw new RenderError(`Image width must be a percentage, got "${width}"`);
+  if (!(fraction > 0 && fraction <= 1)) {
+    throw new RenderError(`Image width must be a percentage between 0% and 100%, got "${width}"`);
   }
 
-  return Number(percent) / 100;
+  return fraction;
 }
 
 function pixelsAcross(context: BlockContext, fraction: number): number {
   const margins = context.page.marginsMm;
   const textWidthMm = A4_WIDTH_MM - margins.left - margins.right;
+
+  if (textWidthMm <= 0) {
+    throw new RenderError(`Margins leave no text width: ${margins.left}+${margins.right} mm`);
+  }
 
   return Math.round(((textWidthMm * fraction) / MM_PER_INCH) * PX_PER_INCH);
 }
