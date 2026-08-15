@@ -288,3 +288,25 @@ describe("a dead worker must not brick the job", () => {
     expect(dirty).toBe("");
   });
 });
+
+describe("job directories stay complete and clean", () => {
+  test("does not commit compiled output", () => {
+    const job = createJobStore(root).createJob("job_1");
+    writeFileSync(join(job.dir, "build", "a.out"), "binary");
+
+    job.advanceTo("SOLVE", "2026-08-15T10:00:00.000Z");
+    const tracked = execFileSync("git", ["-C", job.dir, "ls-files"], { encoding: "utf8" });
+
+    expect(tracked).not.toContain("build/");
+  });
+
+  test("adds a directory a job created before it existed", () => {
+    const store = createJobStore(root);
+    const job = store.createJob("job_1");
+    rmSync(join(job.dir, "build"), { recursive: true, force: true });
+
+    const reopened = store.openJob("job_1");
+
+    expect(existsSync(join(reopened.dir, "build"))).toBe(true);
+  });
+});

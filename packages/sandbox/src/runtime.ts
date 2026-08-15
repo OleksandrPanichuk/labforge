@@ -9,9 +9,25 @@ export interface Runtime {
   cellCommand(cellRef: string): string[];
 }
 
+export const CELL_REF_RE = /^cells\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 const SHARED_ENV = {
   HOME: "/tmp",
 };
+
+const CPP_SCRIPT = [
+  "set -e",
+  `sources=$(find ${JOB_MOUNT}/src -name '*.cpp' 2>/dev/null | tr '\\n' ' ')`,
+  `g++ -std=c++20 -I ${JOB_MOUNT} -o "$1" "$0" $sources`,
+  'exec "$1"',
+].join("; ");
+
+const JAVA_SCRIPT = [
+  "set -e",
+  `sources=$(find ${JOB_MOUNT}/src -name '*.java' 2>/dev/null | tr '\\n' ' ')`,
+  `javac -d ${BUILD_MOUNT} -cp ${JOB_MOUNT}:${BUILD_MOUNT} "$0" $sources`,
+  `exec java -cp ${BUILD_MOUNT}:${JOB_MOUNT} "$1"`,
+].join("; ");
 
 export const RUNTIMES: Record<RuntimeId, Runtime> = {
   python: {
@@ -23,23 +39,19 @@ export const RUNTIMES: Record<RuntimeId, Runtime> = {
       PYTHONDONTWRITEBYTECODE: "1",
       MPLCONFIGDIR: "/tmp/matplotlib",
     },
-    cellCommand: (cellRef) => ["python", cellRef],
+    cellCommand: (cellRef) => ["python", checked(cellRef)],
   },
   node: {
     id: "node",
     image: "lab-node",
     env: { ...SHARED_ENV, NODE_PATH: JOB_MOUNT },
-    cellCommand: (cellRef) => ["node", cellRef],
+    cellCommand: (cellRef) => ["node", checked(cellRef)],
   },
   java: {
     id: "java",
     image: "lab-java",
     env: { ...SHARED_ENV, CLASSPATH: `${JOB_MOUNT}:${BUILD_MOUNT}` },
-    cellCommand: (cellRef) => [
-      "sh",
-      "-c",
-      `javac -d ${BUILD_MOUNT} -cp ${JOB_MOUNT} ${cellRef} && java -cp ${JOB_MOUNT}:${BUILD_MOUNT} ${javaClassOf(cellRef)}`,
-    ],
+    cellCommand: (cellRef) => ["sh", "-c", JAVA_SCRIPT, checked(cellRef), baseOf(cellRef)],
   },
   cpp: {
     id: "cpp",
@@ -48,7 +60,9 @@ export const RUNTIMES: Record<RuntimeId, Runtime> = {
     cellCommand: (cellRef) => [
       "sh",
       "-c",
-      `g++ -std=c++20 -I ${JOB_MOUNT} -o ${BUILD_MOUNT}/${binaryOf(cellRef)} ${cellRef} && ${BUILD_MOUNT}/${binaryOf(cellRef)}`,
+      CPP_SCRIPT,
+      checked(cellRef),
+      `${BUILD_MOUNT}/${baseOf(cellRef)}`,
     ],
   },
 };
@@ -85,10 +99,14 @@ export function runtimeFor(language: string): Runtime {
   return RUNTIMES[id];
 }
 
-function javaClassOf(cellRef: string): string {
-  return (cellRef.split("/").pop() ?? cellRef).replace(/\.java$/, "");
+function checked(cellRef: string): string {
+  if (!CELL_REF_RE.test(cellRef)) {
+    throw new Error(`"${cellRef}" is not a usable cell reference; expected cells/<name>`);
+  }
+
+  return cellRef;
 }
 
-function binaryOf(cellRef: string): string {
-  return (cellRef.split("/").pop() ?? cellRef).replace(/\.[^.]+$/, "");
+function baseOf(cellRef: string): string {
+  return (checked(cellRef).split("/").pop() ?? cellRef).replace(/\.[^.]+$/, "");
 }

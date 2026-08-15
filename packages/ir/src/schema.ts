@@ -122,7 +122,9 @@ export type Block = z.infer<typeof block>;
 export const valueEntry = z.object({
   value: z.string().optional(),
   raw: z.union([z.number(), z.string()]).optional(),
-  cellRef: z.string(),
+  cellRef: z.string().regex(/^cells\/[A-Za-z0-9][A-Za-z0-9._-]*$/, {
+    message: "cellRef must name a file in cells/ with no path separators or shell characters",
+  }),
   format: z.string().optional(),
   runRef: z.string().optional(),
 });

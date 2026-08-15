@@ -7,7 +7,7 @@ export {
   type SandboxEngine,
   type SandboxRunResult,
 } from "./run";
-export { RUNTIMES, type Runtime, type RuntimeId, runtimeFor } from "./runtime";
+export { CELL_REF_RE, RUNTIMES, type Runtime, type RuntimeId, runtimeFor } from "./runtime";
 export {
   DOCKER_SOCKET_CANDIDATES,
   type PathProbe,

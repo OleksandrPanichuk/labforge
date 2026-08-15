@@ -12,6 +12,8 @@ const dockerAvailable = resolveDockerSocket() !== undefined;
 const IMAGES: Partial<Record<string, string>> = {
   python: process.env.LABFORGE_PYTHON_IMAGE ?? "python:3.12-slim",
   node: process.env.LABFORGE_NODE_IMAGE ?? "node:22-slim",
+  cpp: process.env.LABFORGE_CPP_IMAGE ?? "gcc:14",
+  java: process.env.LABFORGE_JAVA_IMAGE ?? "eclipse-temurin:21-jdk-alpine",
 };
 
 let jobDir: string;
@@ -90,6 +92,41 @@ describe.skipIf(!dockerAvailable)("a cell reaches the lab code in src/", () => {
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ ok: 1 });
   });
+
+  test("c++ links the lab's own sources, not just headers", async () => {
+    writeFileSync(join(jobDir, "src", "lib.hpp"), "#pragma once\nint compute();\n", "utf8");
+    writeFileSync(
+      join(jobDir, "src", "lib.cpp"),
+      '#include "src/lib.hpp"\nint compute() { return 42; }\n',
+      "utf8",
+    );
+    const ref = cell(
+      "metrics.cpp",
+      '#include <cstdio>\n#include "src/lib.hpp"\nint main() { printf("{\\"a\\": %d}", compute()); }\n',
+    );
+
+    const result = await run(RUNTIMES.cpp, ref);
+
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toEqual({ a: 42 });
+  }, 180_000);
+
+  test("java compiles the lab's own sources with the cell", async () => {
+    writeFileSync(
+      join(jobDir, "src", "Solver.java"),
+      "public class Solver { public static int answer() { return 42; } }\n",
+      "utf8",
+    );
+    const ref = cell(
+      "Metrics.java",
+      'public class Metrics { public static void main(String[] a) { System.out.printf("{\\"a\\": %d}", Solver.answer()); } }\n',
+    );
+
+    const result = await run(RUNTIMES.java, ref);
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ a: 42 });
+  }, 180_000);
 
   test("the job tree is still refused for writing", async () => {
     const ref = cell(

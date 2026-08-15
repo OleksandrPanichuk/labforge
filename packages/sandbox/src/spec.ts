@@ -12,7 +12,7 @@ export const LIMITS = {
 } as const;
 
 export interface SandboxRunRequest {
-  image: string;
+  image?: string;
   runtime?: RuntimeId;
   cmd: string[];
   jobDir: string;
@@ -49,10 +49,11 @@ export function buildContainerSpec(request: SandboxRunRequest): ContainerSpec {
     throw new Error(`jobDir must be an absolute path, got "${request.jobDir}"`);
   }
 
-  const env = { ...RUNTIMES[request.runtime ?? "python"].env, ...request.env };
+  const runtime = RUNTIMES[request.runtime ?? "python"];
+  const env = { ...runtime.env, ...request.env };
 
   return {
-    Image: request.image,
+    Image: request.image ?? runtime.image,
     Cmd: request.cmd,
     WorkingDir: request.workdir ?? JOB_MOUNT,
     User: LIMITS.user,
