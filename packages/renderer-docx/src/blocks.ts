@@ -1,4 +1,4 @@
-import type { Block, StyleDef, ValueEntry } from "@labforge/ir";
+import type { Block, ReportIR, StyleDef, ValueEntry } from "@labforge/ir";
 import {
   BorderStyle,
   type IBorderOptions,
@@ -8,6 +8,7 @@ import {
   TableRow,
   WidthType,
 } from "docx";
+import type { JobFiles } from "./files";
 import { textRunsOf } from "./runs";
 
 export const ORDERED_LIST_REFERENCE = "labforge-ordered";
@@ -42,6 +43,8 @@ export function createListInstances(): ListInstances {
 export interface BlockContext {
   values: Record<string, ValueEntry>;
   styles: Record<string, StyleDef>;
+  page: ReportIR["page"];
+  files?: JobFiles;
   listInstance: ListInstances;
 }
 

@@ -18,6 +18,8 @@ import {
   renderList,
   renderTable,
 } from "./blocks";
+import { type JobFiles, jobFilesAt } from "./files";
+import { renderCodeListing, renderImage, renderPageBreak } from "./media";
 import { textRunsOf } from "./runs";
 import { mmToTwips, paragraphOptionsOf, runOptionsOf, styleIdOf } from "./styles";
 
@@ -27,11 +29,16 @@ const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
 const DEFAULT_STYLE = "default";
 
-export async function renderReport(ir: ReportIR): Promise<Buffer> {
-  return await Packer.toBuffer(buildDocument(ir));
+export interface RenderOptions {
+  jobDir?: string;
+  files?: JobFiles;
 }
 
-export function buildDocument(ir: ReportIR): Document {
+export async function renderReport(ir: ReportIR, options: RenderOptions = {}): Promise<Buffer> {
+  return await Packer.toBuffer(buildDocument(ir, options));
+}
+
+export function buildDocument(ir: ReportIR, options: RenderOptions = {}): Document {
   return new Document({
     creator: ir.meta.student.name,
     title: ir.meta.title,
@@ -54,21 +61,30 @@ export function buildDocument(ir: ReportIR): Document {
         },
       ],
     },
-    sections: [section(ir)],
+    sections: [section(ir, options)],
   });
 }
 
-function renderBlocks(ir: ReportIR): (Paragraph | Table)[] {
-  const context = blockContext(ir);
+function renderBlocks(ir: ReportIR, options: RenderOptions): (Paragraph | Table)[] {
+  const context = blockContext(ir, options);
 
   return ir.blocks.flatMap((block) => renderBlock(block, context));
 }
 
-function blockContext(ir: ReportIR): BlockContext {
-  return { values: ir.values, styles: ir.styles, listInstance: createListInstances() };
+function blockContext(ir: ReportIR, options: RenderOptions): BlockContext {
+  const files =
+    options.files ?? (options.jobDir === undefined ? undefined : jobFilesAt(options.jobDir));
+
+  return {
+    values: ir.values,
+    styles: ir.styles,
+    page: ir.page,
+    files,
+    listInstance: createListInstances(),
+  };
 }
 
-function section(ir: ReportIR): ISectionOptions {
+function section(ir: ReportIR, options: RenderOptions): ISectionOptions {
   const margins = ir.page.marginsMm;
 
   return {
@@ -87,7 +103,7 @@ function section(ir: ReportIR): ISectionOptions {
       },
     },
     footers: ir.page.pageNumbers ? { default: pageNumberFooter() } : undefined,
-    children: renderBlocks(ir),
+    children: renderBlocks(ir, options),
   };
 }
 
@@ -142,6 +158,12 @@ function renderBlock(block: Block, context: BlockContext): (Paragraph | Table)[]
       return renderList(block, context);
     case "table":
       return renderTable(block, context);
+    case "image":
+      return renderImage(block, context);
+    case "code-listing":
+      return renderCodeListing(block, context);
+    case "pagebreak":
+      return renderPageBreak();
     default:
       return [];
   }

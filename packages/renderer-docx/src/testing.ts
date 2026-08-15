@@ -30,3 +30,14 @@ export function makeIR(overrides: Partial<ReportIR> = {}): ReportIR {
     ...overrides,
   };
 }
+
+export function fakePng(width: number, height: number): Buffer {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(13);
+  const dimensions = Buffer.alloc(8);
+  dimensions.writeUInt32BE(width, 0);
+  dimensions.writeUInt32BE(height, 4);
+
+  return Buffer.concat([signature, length, Buffer.from("IHDR"), dimensions, Buffer.alloc(5)]);
+}
