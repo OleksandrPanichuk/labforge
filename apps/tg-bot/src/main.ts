@@ -1,8 +1,10 @@
-const token = process.env.TG_BOT_TOKEN;
+import { createLogger } from "@labforge/logger";
 
-if (!token) {
-  console.error("TG_BOT_TOKEN is not set");
+const logger = createLogger({ service: "tg-bot" });
+
+if (!process.env.TG_BOT_TOKEN) {
+  logger.fatal("TG_BOT_TOKEN is not set");
   process.exit(1);
 }
 
-console.info("labforge tg-bot: bot flow is implemented in Phase 2 (see CLAUDE.md)");
+logger.info("tg-bot bootstrap placeholder, bot flow lands in phase 2");

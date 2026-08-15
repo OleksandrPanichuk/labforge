@@ -12,7 +12,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    # AOF: черга BullMQ має переживати ребут ноута (docs/labforge-architecture.md §11)
     command: redis-server --appendonly yes
     ports:
       - "6379:6379"

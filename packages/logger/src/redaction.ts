@@ -1,0 +1,25 @@
+export const REDACT_PATHS = [
+  "token",
+  "*.token",
+  "apiKey",
+  "*.apiKey",
+  "password",
+  "*.password",
+  "secret",
+  "*.secret",
+  "jwt",
+  "*.jwt",
+  "authorization",
+  "*.authorization",
+  "cookie",
+  "*.cookie",
+  "ANTHROPIC_API_KEY",
+  "TG_BOT_TOKEN",
+  "JWT_SECRET",
+  "DATABASE_URL",
+  "REDIS_URL",
+  "req.headers.authorization",
+  "req.headers.cookie",
+];
+
+export const REDACT_CENSOR = "[redacted]";

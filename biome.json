@@ -58,10 +58,7 @@
       "suspicious": {
         "noExplicitAny": "error",
         "useAwait": "error",
-        "noConsole": {
-          "level": "warn",
-          "options": { "allow": ["error", "warn", "info"] }
-        }
+        "noConsole": "error"
       }
     }
   },

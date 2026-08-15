@@ -1,9 +1,15 @@
+import { createLogger } from "@labforge/logger";
+import { NestLoggerAdapter } from "@labforge/logger/nest";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
-  await app.listen(process.env.PORT ?? 3000);
+  const logger = createLogger({ service: "core" });
+  const app = await NestFactory.create(AppModule, { logger: new NestLoggerAdapter(logger) });
+  const port = Number(process.env.PORT ?? 3000);
+
+  await app.listen(port);
+  logger.info({ port }, "core listening");
 }
 
 void bootstrap();

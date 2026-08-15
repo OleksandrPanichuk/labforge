@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@labforge/logger": "workspace:*",
     "grammy": "^1.45.1"
   }
 }
