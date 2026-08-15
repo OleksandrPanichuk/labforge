@@ -120,7 +120,7 @@ export const block = z.discriminatedUnion("type", [
 export type Block = z.infer<typeof block>;
 
 export const valueEntry = z.object({
-  value: z.string(),
+  value: z.string().optional(),
   raw: z.union([z.number(), z.string()]).optional(),
   cellRef: z.string(),
   format: z.string().optional(),

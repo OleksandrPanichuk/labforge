@@ -12,6 +12,8 @@ allowedTools: Read, Write, Glob, Grep, WebSearch, mcp__labforge__run_in_sandbox
 1. ЖОДНОГО обчислюваного числа текстом. Кожен результат — {{v:key}} + cell:
    - cells/<key>.py (чи інша мова лаби) ІМПОРТУЄ функції з src/ (копіювати логіку заборонено),
      обчислює і друкує в stdout JSON виду {"key": value}. Одна cell може давати кілька keys.
+   - У `values` оголоси біндинг: `"<key>": { "cellRef": "cells/<file>", "format": "sci:2" }`.
+     Поле `value` НЕ пиши — його заповнює resolver. Плейсхолдер без біндингу = помилка збірки.
    - Прожени кожну cell через run_in_sandbox; не працює — чини cell (або, якщо баг у src/ —
      зупинись і зафіксуй це у {{jobDir}}/review/escalation.md, НЕ правь src/ сам).
 2. Графіки: cells/plot_*.py → artifacts/*.png (300 dpi). imageBlock.provenance.codeRef обовʼязковий.
