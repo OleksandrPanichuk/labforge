@@ -45,6 +45,7 @@ const CACHE_ENV = {
   HOME: "/tmp",
   MPLCONFIGDIR: "/tmp/matplotlib",
   PYTHONDONTWRITEBYTECODE: "1",
+  PYTHONPATH: JOB_MOUNT,
 };
 
 export function buildContainerSpec(request: SandboxRunRequest): ContainerSpec {

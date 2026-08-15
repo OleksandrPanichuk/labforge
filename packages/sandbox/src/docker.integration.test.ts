@@ -95,6 +95,20 @@ describe.skipIf(!dockerAvailable)("sandbox against a live docker daemon", () => 
     expect(existsSync(join(jobDir, "artifacts", "plot.png"))).toBe(true);
   });
 
+  test("lets a cell import lab code from src", async () => {
+    mkdirSync(join(jobDir, "src"), { recursive: true });
+    writeFileSync(join(jobDir, "src", "solver.py"), "def answer():\n    return 42\n", "utf8");
+    writeCell(
+      "importer.py",
+      'import json\nfrom src.solver import answer\nprint(json.dumps({"a": answer()}))',
+    );
+
+    const result = await run(["python", "cells/importer.py"]);
+
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toEqual({ a: 42 });
+  });
+
   test("kills a cell that outruns its timeout", async () => {
     const run = runInSandbox(
       { image: IMAGE, cmd: ["sleep", "30"], jobDir, timeoutMs: 2000 },
