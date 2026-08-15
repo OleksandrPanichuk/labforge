@@ -4,8 +4,10 @@ export {
   StyleError,
   UnresolvedValueError,
 } from "./errors";
+export { type JobFiles, jobFilesAt } from "./files";
 export { type InlineRun, parseInline } from "./inline";
-export { buildDocument, type DocumentPart, renderReport } from "./render";
+export { type ImageSize, readPngSize } from "./png";
+export { buildDocument, type DocumentPart, type RenderOptions, renderReport } from "./render";
 export {
   cmToTwips,
   paragraphOptionsOf,
