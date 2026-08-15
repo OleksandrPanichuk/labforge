@@ -22,7 +22,7 @@ description: Use when adding a new workspace package or app to the monorepo — 
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   }
@@ -42,8 +42,10 @@ description: Use when adding a new workspace package or app to the monorepo — 
 - `renderer-docx`: golden-тести (fixture IR → snapshot XML) — обовʼязкові до мержа.
 - `resolver`, валідатор `ir`: unit-тести — обовʼязкові до мержа.
 - Тест-раннер — вбудований `bun test`, файли `*.test.ts` поруч із кодом
-  (`import { describe, expect, test } from "bun:test"`). Для tsc додати `@types/bun`
-  у devDependencies і виключити `src/**/*.test.ts` з `tsconfig.json`.
+  (`import { describe, expect, test } from "bun:test"`). Додати `@types/bun` у devDependencies.
+- Два tsconfig: `tsconfig.json` (включає тести — по ньому йде `typecheck`) і
+  `tsconfig.build.json` (`extends: "./tsconfig.json"`, `exclude: ["src/**/*.test.ts"]` —
+  по ньому йде `build`, щоб тести не потрапляли в `dist`).
 
 ## Чого не робити
 
