@@ -70,6 +70,10 @@ describe("parseArgs", () => {
     expect(() => parseArgs([], now)).toThrow(/Usage/);
   });
 
+  test("refuses an empty flag value rather than recording it", () => {
+    expect(() => parseArgs(["t.md", "--subject", ""], now)).toThrow(/--subject/);
+  });
+
   test("refuses a flag with no value rather than swallowing the next one", () => {
     expect(() => parseArgs(["t.md", "--subject", "--teacher", "x"], now)).toThrow(/--subject/);
   });

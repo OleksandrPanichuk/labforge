@@ -44,7 +44,7 @@ function splitArgv(argv: string[]): { flags: Map<string, string>; positional: st
     if (argument.startsWith("--")) {
       const value = argv[index + 1];
 
-      if (value === undefined || value.startsWith("--")) {
+      if (value === undefined || value.startsWith("--") || value.trim() === "") {
         throw new Error(`${argument} needs a value`);
       }
 

@@ -16,7 +16,9 @@ export const runContextSchema = z.object({
 export type RunContext = z.infer<typeof runContextSchema>;
 
 export function writeRunContext(jobDir: string, context: RunContext): void {
-  writeFileSync(join(jobDir, RUN_CONTEXT), `${JSON.stringify(context, null, 2)}\n`, "utf8");
+  const parsed = runContextSchema.parse(context);
+
+  writeFileSync(join(jobDir, RUN_CONTEXT), `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
 }
 
 export function readRunContext(jobDir: string): Partial<RunContext> {

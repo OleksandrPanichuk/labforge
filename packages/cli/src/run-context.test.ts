@@ -50,6 +50,10 @@ describe("settingsFor", () => {
     expect(settingsFor({}, job.dir).language).toBe("python");
   });
 
+  test("refuses to record settings it would not accept back", () => {
+    expect(() => writeRunContext(job.dir, { language: "" })).toThrow(/language/);
+  });
+
   test("ignores a run file that has been mangled", () => {
     writeFileSync(join(job.dir, RUN_CONTEXT), "{ language: ", "utf8");
 
