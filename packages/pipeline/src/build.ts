@@ -10,6 +10,7 @@ import {
   writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import type { StudentProfile } from "@labforge/configs";
 import { type ReportIR, reportIR, type ValidationIssue, validateReport } from "@labforge/ir";
 import type { Job } from "@labforge/jobs";
 import { renderReport } from "@labforge/renderer-docx";
@@ -43,6 +44,7 @@ export interface BuildRequest {
   cells: CellRunner;
   decimalSeparator?: string;
   mode?: BuildMode;
+  student?: StudentProfile;
 }
 
 export interface BuildResult {
@@ -56,16 +58,25 @@ export async function buildReport(request: BuildRequest): Promise<BuildResult> {
   const { job } = request;
   const mode = request.mode ?? "full";
   const docxPath = join(job.dir, DOCX_FILE);
-  const document = readReport(job.reportPath);
-  const pending = generatedArtifacts(document);
-  const warnings: ValidationIssue[] = [];
+  const stamped = stampStudent(readReport(job.reportPath), request.student);
+  const document = stamped.ir;
+  const warnings: ValidationIssue[] = [...stamped.warnings];
 
   if (mode === "render") {
     check(document, "verify", { phase: "post-resolve", files: jobProbe(job.dir) });
-    writeAtomically(docxPath, await render(document, job.dir));
+
+    const rendered = await render(document, job.dir);
+
+    if (stamped.warnings.length > 0) {
+      writeAtomically(job.reportPath, `${JSON.stringify(document, null, 2)}\n`);
+    }
+
+    writeAtomically(docxPath, rendered);
 
     return { docxPath, ir: document, runs: [], warnings };
   }
+
+  const pending = generatedArtifacts(document);
 
   try {
     warnings.push(
@@ -137,6 +148,53 @@ function readReport(path: string): ReportIR {
   }
 
   return parsed.data;
+}
+
+function stampStudent(
+  document: ReportIR,
+  profile: StudentProfile | undefined,
+): { ir: ReportIR; warnings: ValidationIssue[] } {
+  if (profile === undefined) {
+    return { ir: document, warnings: [] };
+  }
+
+  const written = document.meta.student;
+  const student: StudentProfile = {
+    name: profile.name,
+    group: profile.group,
+    ...((profile.variant ?? written.variant) !== undefined && {
+      variant: profile.variant ?? written.variant,
+    }),
+  };
+
+  if (sameStudent(written, student)) {
+    return { ir: document, warnings: [] };
+  }
+
+  return {
+    ir: { ...document, meta: { ...document.meta, student } },
+    warnings: [
+      {
+        rule: "student-identity",
+        severity: "warning",
+        message: `The report was written for ${describe(written)}; the configured student is ${describe(student)} and that is what the report now carries`,
+      },
+    ],
+  };
+}
+
+function describe(student: StudentProfile): string {
+  const variant = student.variant === undefined ? "" : `, variant ${student.variant}`;
+
+  return `"${student.name}" (${student.group}${variant})`;
+}
+
+function sameStudent(inReport: StudentProfile, profile: StudentProfile): boolean {
+  return (
+    inReport.name === profile.name &&
+    inReport.group === profile.group &&
+    inReport.variant === profile.variant
+  );
 }
 
 function check(

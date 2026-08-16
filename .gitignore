@@ -10,3 +10,5 @@ coverage/
 .DS_Store
 
 .claude/settings.local.json
+
+configs/student.json

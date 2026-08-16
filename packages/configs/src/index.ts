@@ -9,3 +9,10 @@ export {
   resolveConfigs,
   STYLE_GUIDE_FILE,
 } from "./resolve";
+export {
+  readStudentProfile,
+  STUDENT_FILE,
+  type StudentProfile,
+  type StudentRequest,
+  studentProfileSchema,
+} from "./student";

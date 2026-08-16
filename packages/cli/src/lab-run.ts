@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { claudeSession, createAgentRunner } from "@labforge/agent";
+import { configFilesAt, readStudentProfile } from "@labforge/configs";
 import { createJobStore, JOB_STATES, type JobState } from "@labforge/jobs";
 import { createLogger, type Logger, withContext } from "@labforge/logger";
 import { type RunResult, runJob } from "@labforge/orchestrator";
@@ -11,6 +12,7 @@ export interface LabRunOptions {
   taskPath: string;
   subject?: string;
   teacher?: string;
+  variant?: string;
   language: string;
   jobId: string;
   jobsDir: string;
@@ -56,7 +58,7 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
 
   if (taskPath === undefined) {
     throw new Error(
-      "Usage: bun run lab:run <task-file> --subject <subject> [--teacher <name>] [--language python]",
+      "Usage: bun run lab:run <task-file> --subject <subject> [--teacher <name>] [--variant <n>] [--language python]",
     );
   }
 
@@ -64,6 +66,7 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
     taskPath,
     subject: flags.get("subject"),
     teacher: flags.get("teacher"),
+    variant: flags.get("variant"),
     language: flags.get("language") ?? DEFAULTS.language,
     jobId: flags.get("job") ?? `lab-${slug(basename(taskPath))}-${now()}`,
     jobsDir: flags.get("jobs-dir") ?? DEFAULTS.jobsDir,
@@ -85,6 +88,10 @@ export async function labRun(options: LabRunOptions): Promise<RunResult> {
     jobId: job.id,
   });
 
+  readStudentProfile(configFilesAt(options.configsDir), {
+    ...(options.variant !== undefined && { variant: options.variant }),
+  });
+
   logger.info({ task: options.taskPath, language: runtime.id }, "lab accepted");
 
   const agents = createDispatcher({
@@ -98,7 +105,9 @@ export async function labRun(options: LabRunOptions): Promise<RunResult> {
     taskPath: options.taskPath,
     subject: options.subject,
     teacher: options.teacher,
+    variant: options.variant,
     runtime,
+    logger,
     cells: cellRunner(job.dir, runtime),
   });
 

@@ -28,7 +28,7 @@ const REPORT = {
     labId: "lab_1",
     subject: "numeric-methods",
     title: "Лабораторна робота №1",
-    student: { name: "Панічук О.", group: "ІП-21" },
+    student: { name: "хтось інший", group: "??" },
     language: "uk",
   },
   page: { size: "A4", marginsMm: { top: 20, right: 10, bottom: 20, left: 20 }, pageNumbers: true },
@@ -78,6 +78,10 @@ beforeEach(() => {
   mkdirSync(join(root, "configs"), { recursive: true });
   writeFileSync(join(root, "configs", "REQUIREMENTS.md"), "base requirements");
   writeFileSync(join(root, "configs", "STYLE_GUIDE.md"), "base styles");
+  writeFileSync(
+    join(root, "configs", "student.json"),
+    JSON.stringify({ name: "Панічук О. В.", group: "ІП-21" }),
+  );
   writeFileSync(join(root, "task.md"), "# Лабораторна 1\n\nОбчислити похибку.");
 });
 
@@ -94,6 +98,7 @@ test.skipIf(!dockerAvailable)(
       configsDir: join(root, "configs"),
       taskPath: join(root, "task.md"),
       subject: "numeric-methods",
+      variant: "7",
       runtime: RUNTIMES.python,
       cells: {
         run: (cellRef) =>
@@ -124,6 +129,7 @@ test.skipIf(!dockerAvailable)(
 
     const report = JSON.parse(readFileSync(job.reportPath, "utf8"));
     expect(report.values.err_max.value).toBe("3,20e-6");
+    expect(report.meta.student).toEqual({ name: "Панічук О. В.", group: "ІП-21", variant: "7" });
     expect(report.values.err_max.runRef).toBe("runs/cells-metrics-py.json");
 
     expect(existsSync(join(job.dir, "report.docx"))).toBe(true);

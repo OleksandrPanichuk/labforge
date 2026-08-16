@@ -15,6 +15,14 @@ describe("parseArgs", () => {
     expect(args.teacher).toBe("Іваненко");
   });
 
+  test("carries the variant of this lab", () => {
+    expect(parseArgs(["t.md", "--variant", "7"], now).variant).toBe("7");
+  });
+
+  test("leaves the variant unset when the lab has none", () => {
+    expect(parseArgs(["t.md"], now).variant).toBeUndefined();
+  });
+
   test("defaults the language and lets it be overridden", () => {
     expect(parseArgs(["t.md"], now).language).toBe("python");
     expect(parseArgs(["t.md", "--language", "C++"], now).language).toBe("C++");

@@ -166,6 +166,7 @@
         "@labforge/sandbox": "workspace:*",
       },
       "devDependencies": {
+        "@labforge/configs": "workspace:*",
         "@types/bun": "^1.3.14",
       },
     },
