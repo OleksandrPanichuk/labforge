@@ -111,41 +111,52 @@
   "meta": {
     "labId": "...", "subject": "...", "teacher": "...",
     "title": "Лабораторна робота №4 ...",
-    "student": { "name": "...", "group": "..." },
+    // ПІБ/групу/варіант бере збірка з configs/student.json, не агент
+    "student": { "name": "...", "group": "...", "variant": "7" },
     "language": "uk"
+  },
+  "page": {                        // A4 і поля з STYLE_GUIDE
+    "size": "A4",
+    "marginsMm": { "top": 20, "right": 10, "bottom": 20, "left": 20 },
+    "pageNumbers": true
   },
   "styles": {                      // named styles, з resolved STYLE_GUIDE
     "default":   { "font": "Times New Roman", "size": 14, "lineHeight": 1.5, "align": "justify", "firstLineIndent": "1.25cm" },
     "heading1":  { "size": 14, "bold": true, "align": "center", "caps": true },
     "caption":   { "size": 12, "align": "center" }
   },
+  // id обовʼязковий у кожного блоку (^blk_): по ньому адресуються правки з рев'ю
   "blocks": [
-    { "type": "heading", "level": 1, "style": "heading1", "text": "МЕТА РОБОТИ" },
-    { "type": "paragraph", "style": "default",
+    { "id": "blk_goal", "type": "heading", "level": 1, "style": "heading1", "text": "МЕТА РОБОТИ" },
+    { "id": "blk_intro", "type": "paragraph", "style": "default",
       "text": "Метод Рунге-Кутти 4-го порядку має локальну похибку <span data-x=\"e1\">O(h^5)</span>, що підтверджено обчисленням: максимальна абсолютна похибка склала <span data-x=\"c1\">{{v:err_max}}</span>." },
-    { "type": "formula", "latex": "y_{n+1} = y_n + \\frac{h}{6}(k_1 + 2k_2 + 2k_3 + k_4)", "numbered": true },
-    { "type": "table", "style": "default", "caption": "Таблиця 1 — Результати",
+    { "id": "blk_rk4", "type": "formula", "latex": "y_{n+1} = y_n + \\frac{h}{6}(k_1 + 2k_2 + 2k_3 + k_4)", "numbered": true },
+    { "id": "blk_results", "type": "table", "style": "default", "caption": "Таблиця 1 — Результати",
       "header": ["x", "y точне", "y обчислене", "похибка"],
       "rows": [["{{v:x0}}", "{{v:ye0}}", "{{v:yc0}}", "{{v:d0}}"]] },
-    { "type": "image", "src": "artifacts/plot_convergence.png",
+    { "id": "blk_plot", "type": "image", "src": "artifacts/plot_convergence.png",
       "caption": "Рисунок 1 — Збіжність методу", "width": "80%",
       "provenance": { "kind": "generated", "codeRef": "cells/plot_convergence.py" } },
-    { "type": "code-listing", "language": "python", "file": "src/runge_kutta.py", "lines": [1, 40] },
-    { "type": "list", "ordered": true, "items": ["...", "..."] },
-    { "type": "pagebreak" }
+    { "id": "blk_src", "type": "code-listing", "language": "python", "file": "src/runge_kutta.py", "lines": [1, 40] },
+    { "id": "blk_steps", "type": "list", "ordered": true, "items": ["...", "..."] },
+    { "id": "blk_break", "type": "pagebreak" }
   ],
   "values": {                      // ЗАПОВНЮЄТЬСЯ ТІЛЬКИ виконанням коду, не агентом
-    "err_max": { "value": "3.2e-6", "cellRef": "cells/compute_errors.py", "format": "sci:2" },
-    "x0": { "value": "0.1", "cellRef": "cells/compute_table.py" }
+    // агент пише лише cellRef+format; value і runRef додає resolver
+    "err_max": { "value": "3,20e-6", "cellRef": "cells/compute_errors.py", "format": "sci:2",
+                 "runRef": "runs/cells-compute-errors-py.json" },
+    "x0": { "value": "0,1", "cellRef": "cells/compute_table.py" }
   },
   "explanations": {
     "e1": { "type": "text", "html": "Порядок точності випливає з розкладу Тейлора…",
-            "sources": [{ "title": "Butcher, Numerical Methods for ODEs", "url": "https://…" }] },
+            "sources": [{ "title": "Butcher, Numerical Methods for ODEs", "url": "https://doi.org/10.1002/9780470753767" }] },
     "c1": { "type": "code", "codeRef": "cells/compute_errors.py",
-            "note": "Значення отримано виконанням цього коду в контейнері, лог: runs/2026-08-15T13:04.json" }
+            "note": "Значення отримано виконанням цього коду в контейнері" }
   }
 }
 ```
+
+Джерело істини схеми — `packages/ir/src/schema.ts`; приклад вище лише ілюструє її.
 
 Inline-розмітка в `text` — обмежений HTML-сабсет: `<b> <i> <u> <sub> <sup> <span data-x="id">`. Рендерери валідують білим списком (sanitize), все інше ріжеться.
 
