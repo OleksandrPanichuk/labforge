@@ -18,7 +18,8 @@
     "format": "biome format --write .",
     "ingest": "bun packages/ingest/src/main.ts",
     "images:build": "for f in docker/lab-*.Dockerfile; do n=$(basename $f .Dockerfile); docker build -f $f -t $n . || exit 1; done",
-    "lab:run": "bun packages/cli/src/main.ts"
+    "lab:run": "bun packages/cli/src/main.ts",
+    "lab:worker": "bun packages/cli/src/worker-main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
