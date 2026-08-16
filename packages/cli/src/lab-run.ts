@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { claudeSession, createAgentRunner } from "@labforge/agent";
+import { configFilesAt, readStudentProfile } from "@labforge/configs";
 import { createJobStore, JOB_STATES, type JobState } from "@labforge/jobs";
 import { createLogger, type Logger, withContext } from "@labforge/logger";
 import { type RunResult, runJob } from "@labforge/orchestrator";
@@ -85,6 +86,10 @@ export async function labRun(options: LabRunOptions): Promise<RunResult> {
   }
   const logger = withContext(options.logger ?? createLogger({ service: "cli" }), {
     jobId: job.id,
+  });
+
+  readStudentProfile(configFilesAt(options.configsDir), {
+    ...(options.variant !== undefined && { variant: options.variant }),
   });
 
   logger.info({ task: options.taskPath, language: runtime.id }, "lab accepted");
