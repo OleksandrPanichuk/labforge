@@ -84,7 +84,10 @@ export function withState(
   if (!isPaused(state) && state !== "FAILED") {
     next.resumeAt = undefined;
     next.lastError = undefined;
-    next.question = undefined;
+
+    if (next.answer === undefined) {
+      next.question = undefined;
+    }
   }
 
   return next;

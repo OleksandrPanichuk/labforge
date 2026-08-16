@@ -7,6 +7,7 @@ export interface AgentRequest {
   job: Job;
   checkpoint: Checkpoint;
   resumeSessionId?: string;
+  question?: string;
   answer?: string;
 }
 
@@ -54,7 +55,7 @@ export function recordAnswer(job: Job, answer: string): JobState {
     throw new Error(`Job "${job.id}" was paused with no state to return to`);
   }
 
-  job.writeCheckpoint({ ...checkpoint, answer });
+  job.update((current) => ({ ...current, answer }));
 
   return target;
 }
@@ -110,7 +111,10 @@ async function runState(
     job,
     checkpoint,
     resumeSessionId: checkpoint.sessionIds[checkpoint.state],
-    ...(checkpoint.answer !== undefined && { answer: checkpoint.answer }),
+    ...(checkpoint.answer !== undefined && {
+      answer: checkpoint.answer,
+      ...(checkpoint.question !== undefined && { question: checkpoint.question }),
+    }),
   });
   const decision = decide(checkpoint, outcome);
 
@@ -191,9 +195,12 @@ function current(job: Job): Checkpoint {
 }
 
 function remember(job: Job, checkpoint: Checkpoint, outcome: AgentOutcome): void {
+  const held = outcome.status === "rate_limited";
+
   job.writeCheckpoint({
     ...checkpoint,
-    answer: undefined,
+    answer: held ? checkpoint.answer : undefined,
+    question: held ? checkpoint.question : undefined,
     sessionIds: { ...checkpoint.sessionIds, [checkpoint.state]: outcome.sessionId },
     ...(outcome.findings !== undefined && {
       lastFindings: {

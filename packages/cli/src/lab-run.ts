@@ -8,6 +8,7 @@ import { type RunResult, runJob } from "@labforge/orchestrator";
 import { DockerodeEngine, type Runtime, runInSandbox, runtimeFor } from "@labforge/sandbox";
 import { prepareJob } from "./answer";
 import { createDispatcher } from "./dispatch";
+import { settingsFor } from "./run-context";
 
 export interface LabRunOptions {
   taskPath: string;
@@ -15,7 +16,7 @@ export interface LabRunOptions {
   teacher?: string;
   variant?: string;
   answer?: string;
-  language: string;
+  language?: string;
   jobId: string;
   jobsDir: string;
   configsDir: string;
@@ -30,7 +31,6 @@ const DEFAULTS = {
   jobsDir: "jobs",
   configsDir: "configs",
   agentsDir: "agents",
-  language: "python",
   stopBefore: "HUMAN_REVIEW" as JobState,
 };
 
@@ -83,7 +83,7 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
     subject: flags.get("subject"),
     teacher: flags.get("teacher"),
     variant: flags.get("variant"),
-    language: flags.get("language") ?? DEFAULTS.language,
+    language: flags.get("language"),
     jobId: named ?? `lab-${slug(basename(taskPath))}-${now()}`,
     jobsDir: flags.get("jobs-dir") ?? DEFAULTS.jobsDir,
     configsDir: flags.get("configs-dir") ?? DEFAULTS.configsDir,
@@ -93,12 +93,21 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
 }
 
 export async function labRun(options: LabRunOptions): Promise<RunResult> {
-  const runtime = runtimeFor(options.language);
   const job = prepareJob({
     jobsDir: options.jobsDir,
     jobId: options.jobId,
     ...(options.answer !== undefined && { answer: options.answer }),
   });
+  const settings = settingsFor(
+    {
+      ...(options.language !== undefined && { language: options.language }),
+      ...(options.subject !== undefined && { subject: options.subject }),
+      ...(options.teacher !== undefined && { teacher: options.teacher }),
+      ...(options.variant !== undefined && { variant: options.variant }),
+    },
+    job.dir,
+  );
+  const runtime = runtimeFor(settings.language);
 
   if (job.readCheckpoint()?.state === "INGEST" && !existsSync(options.taskPath)) {
     throw new Error(`No task file at ${options.taskPath}`);
@@ -108,7 +117,7 @@ export async function labRun(options: LabRunOptions): Promise<RunResult> {
   });
 
   readStudentProfile(configFilesAt(options.configsDir), {
-    ...(options.variant !== undefined && { variant: options.variant }),
+    ...(settings.variant !== undefined && { variant: settings.variant }),
   });
 
   logger.info({ task: options.taskPath, language: runtime.id }, "lab accepted");
@@ -118,13 +127,13 @@ export async function labRun(options: LabRunOptions): Promise<RunResult> {
       agentsDir: options.agentsDir,
       session: claudeSession({ jobDir: job.dir, runtime }),
       language: runtime.id,
-      context: { subject: options.subject ?? "unknown" },
+      context: { subject: settings.subject ?? "unknown" },
     }),
     configsDir: options.configsDir,
     taskPath: options.taskPath,
-    subject: options.subject,
-    teacher: options.teacher,
-    variant: options.variant,
+    subject: settings.subject,
+    teacher: settings.teacher,
+    variant: settings.variant,
     runtime,
     logger,
     cells: cellRunner(job.dir, runtime),

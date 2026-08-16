@@ -444,3 +444,94 @@ describe("recordAnswer", () => {
     expect(job.readCheckpoint()?.answer).toBe("Варіант 7\nМетод: січних");
   });
 });
+
+describe("an answer that meets a rate limit", () => {
+  test("is not thrown away with the turn that carried it", async () => {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "?" }] }),
+    });
+    recordAnswer(job, "Варіант 7");
+
+    await runJob({
+      job,
+      agents: agents({
+        CONTEXT: [
+          { status: "rate_limited", sessionId: "s1", resumeAt: "2026-08-16T18:00:00.000Z" },
+        ],
+      }),
+    });
+
+    expect(job.readCheckpoint()?.answer).toBe("Варіант 7");
+  });
+
+  test("reaches the agent again once the limit is over", async () => {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "?" }] }),
+    });
+    recordAnswer(job, "Варіант 7");
+    await runJob({
+      job,
+      agents: agents({
+        CONTEXT: [
+          { status: "rate_limited", sessionId: "s1", resumeAt: "2026-08-16T18:00:00.000Z" },
+        ],
+      }),
+    });
+
+    const seen: (string | undefined)[] = [];
+    await runJob({
+      job,
+      agents: {
+        run(request) {
+          seen.push(request.answer);
+
+          return Promise.resolve(completed);
+        },
+      },
+    });
+
+    expect(seen[0]).toBe("Варіант 7");
+  });
+});
+
+describe("the question the answer belongs to", () => {
+  test("travels with the answer to the state that asked", async () => {
+    await runJob({
+      job,
+      agents: agents({
+        CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "Which variant?" }],
+      }),
+    });
+    recordAnswer(job, "Варіант 7");
+
+    const seen: (string | undefined)[] = [];
+    await runJob({
+      job,
+      agents: {
+        run(request) {
+          seen.push(request.question);
+
+          return Promise.resolve(completed);
+        },
+      },
+    });
+
+    expect(seen[0]).toBe("Which variant?");
+  });
+
+  test("is gone once the state has had it", async () => {
+    await runJob({
+      job,
+      agents: agents({
+        CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "Which variant?" }],
+      }),
+    });
+    recordAnswer(job, "Варіант 7");
+
+    await runJob({ job, agents: agents() });
+
+    expect(job.readCheckpoint()?.question).toBeUndefined();
+  });
+});

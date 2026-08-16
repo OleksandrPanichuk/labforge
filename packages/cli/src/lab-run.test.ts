@@ -23,8 +23,8 @@ describe("parseArgs", () => {
     expect(parseArgs(["t.md"], now).variant).toBeUndefined();
   });
 
-  test("defaults the language and lets it be overridden", () => {
-    expect(parseArgs(["t.md"], now).language).toBe("python");
+  test("leaves the language to the job when the command line is silent", () => {
+    expect(parseArgs(["t.md"], now).language).toBeUndefined();
     expect(parseArgs(["t.md", "--language", "C++"], now).language).toBe("C++");
   });
 
