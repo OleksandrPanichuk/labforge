@@ -226,71 +226,98 @@ describe("failure stages", () => {
 });
 
 describe("student identity", () => {
-  function writeProfile(profile: Record<string, string>): void {
-    writeFileSync(
-      join(job.dir, "context", "student.json"),
-      JSON.stringify(profile, null, 2),
-      "utf8",
-    );
-  }
+  const profile = { name: "Панічук О. В.", group: "ІП-21", variant: "7" };
 
-  test("stamps the identity from the job context over whatever the agent wrote", async () => {
-    writeProfile({ name: "Панічук О. В.", group: "ІП-21", variant: "7" });
+  test("stamps the identity the caller vouches for over whatever the agent wrote", async () => {
     writeIR(reportIR());
 
-    const result = await buildReport({ job, cells: runner(workingCell) });
+    const result = await buildReport({ job, cells: runner(workingCell), student: profile });
 
-    expect(result.ir.meta.student).toEqual({
-      name: "Панічук О. В.",
-      group: "ІП-21",
-      variant: "7",
-    });
+    expect(result.ir.meta.student).toEqual(profile);
     expect(JSON.parse(readFileSync(job.reportPath, "utf8")).meta.student.name).toBe(
       "Панічук О. В.",
     );
   });
 
-  test("warns that the agent had invented a different identity", async () => {
-    writeProfile({ name: "Панічук О. В.", group: "ІП-21" });
+  test("ignores a profile the agent planted in the job directory", async () => {
+    writeFileSync(
+      join(job.dir, "context", "student.json"),
+      JSON.stringify({ name: "Не той студент", group: "ХХ-00" }),
+      "utf8",
+    );
     writeIR(reportIR());
 
-    const result = await buildReport({ job, cells: runner(workingCell) });
+    const result = await buildReport({ job, cells: runner(workingCell), student: profile });
 
-    expect(result.warnings.some((issue) => issue.rule === "student-identity")).toBe(true);
+    expect(result.ir.meta.student.name).toBe("Панічук О. В.");
+  });
+
+  test("warns that the agent had invented a different identity", async () => {
+    writeIR(reportIR());
+
+    const result = await buildReport({ job, cells: runner(workingCell), student: profile });
+    const warning = result.warnings.find((issue) => issue.rule === "student-identity");
+
+    expect(warning?.message).toContain("Student");
+    expect(warning?.message).toContain("ІП-21");
   });
 
   test("says nothing when the agent copied the identity correctly", async () => {
-    writeProfile({ name: "Student", group: "IP-21" });
     writeIR(reportIR());
 
-    const result = await buildReport({ job, cells: runner(workingCell) });
+    const result = await buildReport({
+      job,
+      cells: runner(workingCell),
+      student: { name: "Student", group: "IP-21" },
+    });
 
     expect(result.warnings.some((issue) => issue.rule === "student-identity")).toBe(false);
   });
 
-  test("builds a job that has no profile at all", async () => {
+  test("keeps a variant the profile does not carry", async () => {
+    writeIR(
+      reportIR({
+        meta: {
+          labId: "lab_1",
+          subject: "numeric-methods",
+          title: "Lab 1",
+          student: { name: "Student", group: "IP-21", variant: "9" },
+          language: "uk",
+        },
+      }),
+    );
+
+    const result = await buildReport({
+      job,
+      cells: runner(workingCell),
+      student: { name: "Панічук О. В.", group: "ІП-21" },
+    });
+
+    expect(result.ir.meta.student.variant).toBe("9");
+  });
+
+  test("corrects the identity when only rendering as well", async () => {
+    writeIR(reportIR());
+    await buildReport({
+      job,
+      cells: runner(workingCell),
+      mode: "resolve",
+      student: { name: "Student", group: "IP-21" },
+    });
+
+    const result = await buildReport({ job, cells: runner({}), mode: "render", student: profile });
+
+    expect(result.ir.meta.student.name).toBe("Панічук О. В.");
+    expect(JSON.parse(readFileSync(job.reportPath, "utf8")).meta.student.name).toBe(
+      "Панічук О. В.",
+    );
+  });
+
+  test("builds a document whose caller vouches for nothing", async () => {
     writeIR(reportIR());
 
     const result = await buildReport({ job, cells: runner(workingCell) });
 
     expect(result.ir.meta.student.name).toBe("Student");
-  });
-
-  test("refuses to build when the profile itself is broken", async () => {
-    writeFileSync(join(job.dir, "context", "student.json"), "{ broken", "utf8");
-    writeIR(reportIR());
-
-    await expect(buildReport({ job, cells: runner(workingCell) })).rejects.toThrow(/student\.json/);
-  });
-
-  test("does not restamp when only rendering what the student approved", async () => {
-    writeProfile({ name: "Панічук О. В.", group: "ІП-21" });
-    writeIR(reportIR());
-    await buildReport({ job, cells: runner(workingCell) });
-
-    writeProfile({ name: "Хтось Інший", group: "ІП-99" });
-    const result = await buildReport({ job, cells: runner(workingCell), mode: "render" });
-
-    expect(result.ir.meta.student.name).toBe("Панічук О. В.");
   });
 });

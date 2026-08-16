@@ -8,6 +8,7 @@ import {
 } from "@labforge/configs";
 import { ingestDocument } from "@labforge/ingest";
 import type { Job } from "@labforge/jobs";
+import { createLogger, type Logger } from "@labforge/logger";
 import type { AgentOutcome, AgentRequest, AgentRunner } from "@labforge/orchestrator";
 import { BuildError, buildReport } from "@labforge/pipeline";
 import type { CellRunner } from "@labforge/resolver";
@@ -22,6 +23,7 @@ export interface DispatcherOptions {
   variant?: string;
   runtime: Runtime;
   cells: CellRunner;
+  logger?: Logger;
 }
 
 const AGENT_STATES = new Set([
@@ -89,6 +91,12 @@ async function writeTask(taskPath: string, job: Job): Promise<void> {
   writeFileSync(target, result.markdown, "utf8");
 }
 
+function studentOf(options: DispatcherOptions) {
+  return readStudentProfile(configFilesAt(options.configsDir), {
+    ...(options.variant !== undefined && { variant: options.variant }),
+  });
+}
+
 function writeContext(options: DispatcherOptions, job: Job): void {
   const files = configFilesAt(options.configsDir);
   const teacher =
@@ -96,7 +104,7 @@ function writeContext(options: DispatcherOptions, job: Job): void {
       ? undefined
       : (findTeacherSlug(options.teacher, files) ?? options.teacher);
   const resolved = resolveConfigs({ subject: options.subject, teacher }, files);
-  const student = readStudentProfile(files, { variant: options.variant });
+  const student = studentOf(options);
 
   writeFileSync(
     join(job.dir, "context", "student.json"),
@@ -114,11 +122,14 @@ function writeContext(options: DispatcherOptions, job: Job): void {
 
 async function build(options: DispatcherOptions, request: AgentRequest): Promise<AgentOutcome> {
   try {
-    await buildReport({
+    const result = await buildReport({
       job: request.job,
       cells: options.cells,
       mode: request.state === "RESOLVE" ? "resolve" : "render",
+      student: studentOf(options),
     });
+
+    report(options, result.warnings);
 
     return { status: "completed", sessionId: "" };
   } catch (error) {
@@ -132,5 +143,17 @@ async function build(options: DispatcherOptions, request: AgentRequest): Promise
       error: `${error.stage}: ${error.message}`,
       fixIn: error.stage === "resolve" ? "FIX" : "IR_FIX",
     };
+  }
+}
+
+function report(options: DispatcherOptions, warnings: { rule: string; message: string }[]): void {
+  if (warnings.length === 0) {
+    return;
+  }
+
+  const logger = options.logger ?? createLogger({ service: "cli" });
+
+  for (const warning of warnings) {
+    logger.warn({ rule: warning.rule, detail: warning.message }, "the build corrected the report");
   }
 }

@@ -102,6 +102,7 @@ export async function labRun(options: LabRunOptions): Promise<RunResult> {
     teacher: options.teacher,
     variant: options.variant,
     runtime,
+    logger,
     cells: cellRunner(job.dir, runtime),
   });
 

@@ -10,7 +10,7 @@ import {
   writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { type StudentProfile, studentProfileSchema } from "@labforge/configs";
+import type { StudentProfile } from "@labforge/configs";
 import { type ReportIR, reportIR, type ValidationIssue, validateReport } from "@labforge/ir";
 import type { Job } from "@labforge/jobs";
 import { renderReport } from "@labforge/renderer-docx";
@@ -25,8 +25,6 @@ import { generatedArtifacts, jobProbe } from "./probe";
 export type BuildStage = "read" | "validate" | "resolve" | "verify" | "render";
 
 export const DOCX_FILE = "report.docx";
-
-const STUDENT_CONTEXT = join("context", "student.json");
 
 export class BuildError extends Error {
   constructor(
@@ -46,6 +44,7 @@ export interface BuildRequest {
   cells: CellRunner;
   decimalSeparator?: string;
   mode?: BuildMode;
+  student?: StudentProfile;
 }
 
 export interface BuildResult {
@@ -59,21 +58,25 @@ export async function buildReport(request: BuildRequest): Promise<BuildResult> {
   const { job } = request;
   const mode = request.mode ?? "full";
   const docxPath = join(job.dir, DOCX_FILE);
-  const read = readReport(job.reportPath);
-  const warnings: ValidationIssue[] = [];
+  const stamped = stampStudent(readReport(job.reportPath), request.student);
+  const document = stamped.ir;
+  const warnings: ValidationIssue[] = [...stamped.warnings];
 
   if (mode === "render") {
-    check(read, "verify", { phase: "post-resolve", files: jobProbe(job.dir) });
-    writeAtomically(docxPath, await render(read, job.dir));
+    check(document, "verify", { phase: "post-resolve", files: jobProbe(job.dir) });
 
-    return { docxPath, ir: read, runs: [], warnings };
+    const rendered = await render(document, job.dir);
+
+    if (stamped.warnings.length > 0) {
+      writeAtomically(job.reportPath, `${JSON.stringify(document, null, 2)}\n`);
+    }
+
+    writeAtomically(docxPath, rendered);
+
+    return { docxPath, ir: document, runs: [], warnings };
   }
 
-  const stamped = stampStudent(read, job.dir);
-  const document = stamped.ir;
   const pending = generatedArtifacts(document);
-
-  warnings.push(...stamped.warnings);
 
   try {
     warnings.push(
@@ -149,31 +152,22 @@ function readReport(path: string): ReportIR {
 
 function stampStudent(
   document: ReportIR,
-  jobDir: string,
+  profile: StudentProfile | undefined,
 ): { ir: ReportIR; warnings: ValidationIssue[] } {
-  const path = join(jobDir, STUDENT_CONTEXT);
-
-  if (!existsSync(path)) {
+  if (profile === undefined) {
     return { ir: document, warnings: [] };
   }
 
-  let raw: unknown;
+  const written = document.meta.student;
+  const student: StudentProfile = {
+    name: profile.name,
+    group: profile.group,
+    ...((profile.variant ?? written.variant) !== undefined && {
+      variant: profile.variant ?? written.variant,
+    }),
+  };
 
-  try {
-    raw = JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    throw new BuildError("read", `${STUDENT_CONTEXT} is not valid JSON`);
-  }
-
-  const parsed = studentProfileSchema.safeParse(raw);
-
-  if (!parsed.success) {
-    throw new BuildError("read", `${STUDENT_CONTEXT} is not a usable student profile`);
-  }
-
-  const student = parsed.data;
-
-  if (sameStudent(document.meta.student, student)) {
+  if (sameStudent(written, student)) {
     return { ir: document, warnings: [] };
   }
 
@@ -183,10 +177,16 @@ function stampStudent(
       {
         rule: "student-identity",
         severity: "warning",
-        message: `The report named "${document.meta.student.name}"; ${STUDENT_CONTEXT} says "${student.name}" and that is what the report now carries`,
+        message: `The report was written for ${describe(written)}; the configured student is ${describe(student)} and that is what the report now carries`,
       },
     ],
   };
+}
+
+function describe(student: StudentProfile): string {
+  const variant = student.variant === undefined ? "" : `, variant ${student.variant}`;
+
+  return `"${student.name}" (${student.group}${variant})`;
 }
 
 function sameStudent(inReport: StudentProfile, profile: StudentProfile): boolean {

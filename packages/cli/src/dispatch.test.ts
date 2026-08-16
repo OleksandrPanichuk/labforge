@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJobStore, type Job } from "@labforge/jobs";
+import { createLogger } from "@labforge/logger";
 import type { AgentOutcome, AgentRequest, AgentRunner } from "@labforge/orchestrator";
 import { RUNTIMES } from "@labforge/sandbox";
 import { createDispatcher } from "./dispatch";
@@ -262,6 +263,86 @@ describe("deterministic states", () => {
     await counting.run(ask("BUILD"));
 
     expect(ran).toBe(0);
+  });
+
+  test("puts the configured identity in the report the agent wrote", async () => {
+    writeFileSync(job.reportPath, JSON.stringify(document));
+
+    await dispatcher(agent()).run(ask("RESOLVE"));
+
+    const report = JSON.parse(readFileSync(job.reportPath, "utf8"));
+
+    expect(report.meta.student).toEqual({ name: "Панічук О. В.", group: "ІП-21" });
+  });
+
+  test("ignores an identity the agent planted in the job directory", async () => {
+    writeFileSync(
+      join(job.dir, "context", "student.json"),
+      JSON.stringify({ name: "Не той студент", group: "ХХ-00" }),
+    );
+    writeFileSync(job.reportPath, JSON.stringify(document));
+
+    await dispatcher(agent()).run(ask("RESOLVE"));
+
+    expect(JSON.parse(readFileSync(job.reportPath, "utf8")).meta.student.name).toBe(
+      "Панічук О. В.",
+    );
+  });
+
+  test("takes a corrected variant from the run that is happening now", async () => {
+    writeFileSync(job.reportPath, JSON.stringify(document));
+    const corrected = createDispatcher({
+      agent: agent(),
+      configsDir,
+      taskPath: join(root, "task.md"),
+      subject: "nm",
+      variant: "9",
+      runtime: RUNTIMES.python,
+      cells: {
+        run: () =>
+          Promise.resolve({ exitCode: 0, stdout: '{"err_max": 1}', stderr: "", durationMs: 1 }),
+      },
+    });
+
+    await corrected.run(ask("RESOLVE"));
+
+    expect(JSON.parse(readFileSync(job.reportPath, "utf8")).meta.student.variant).toBe("9");
+  });
+
+  test("refuses to build a report for an unknown author", async () => {
+    rmSync(join(configsDir, "student.json"));
+    writeFileSync(job.reportPath, JSON.stringify(document));
+
+    const outcome = await dispatcher(agent()).run(ask("RESOLVE"));
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toContain("student.json");
+  });
+
+  test("tells the student when it had to correct the identity", async () => {
+    const warnings: string[] = [];
+    writeFileSync(job.reportPath, JSON.stringify(document));
+    const watched = createDispatcher({
+      agent: agent(),
+      configsDir,
+      taskPath: join(root, "task.md"),
+      subject: "nm",
+      runtime: RUNTIMES.python,
+      logger: {
+        ...createLogger({ service: "cli" }),
+        warn: (details: unknown, message?: string) => {
+          warnings.push(`${message ?? ""} ${JSON.stringify(details)}`);
+        },
+      } as never,
+      cells: {
+        run: () =>
+          Promise.resolve({ exitCode: 0, stdout: '{"err_max": 1}', stderr: "", durationMs: 1 }),
+      },
+    });
+
+    await watched.run(ask("RESOLVE"));
+
+    expect(warnings.join(" ")).toContain("Панічук О. В.");
   });
 
   test("refuses a state nobody handles rather than crashing the machine", async () => {

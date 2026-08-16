@@ -43,7 +43,7 @@ describe("readStudentProfile", () => {
   });
 
   test("says what to create when there is no profile at all", () => {
-    expect(() => read()).toThrow(new RegExp(STUDENT_FILE));
+    expect(() => read()).toThrow(/create it/);
   });
 
   test("names the missing field rather than dumping a schema error", () => {
@@ -79,7 +79,7 @@ describe("readStudentProfile", () => {
   test("explains itself when the profile is not valid json", () => {
     writeFileSync(join(root, STUDENT_FILE), "{ name: broken", "utf8");
 
-    expect(() => read()).toThrow(new RegExp(STUDENT_FILE));
+    expect(() => read()).toThrow(/not valid JSON/);
   });
 
   test("trims incidental whitespace", () => {
