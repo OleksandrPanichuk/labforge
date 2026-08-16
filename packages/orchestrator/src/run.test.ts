@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJobStore, type Job } from "@labforge/jobs";
 import type { AgentOutcome } from "./decide";
-import { type AgentRunner, runJob } from "./run";
+import { type AgentRunner, recordAnswer, runJob } from "./run";
 
 let root: string;
 let job: Job;
@@ -278,6 +278,7 @@ describe("loops must not interfere or spin", () => {
       findings: [{ id: "f1", severity: "critical", what: "same bug" }],
     };
     await runJob({ job, agents: agents({ CODE_REVIEW: Array(6).fill(repeated) }) });
+    recordAnswer(job, "The finding is wrong, carry on");
 
     const after = agents();
     const result = await runJob({ job, agents: after });
@@ -297,6 +298,7 @@ describe("a question is not an escape from the review budget", () => {
     };
 
     await runJob({ job, agents: agents({ SOLVE: [asking] }) });
+    recordAnswer(job, "Варіант 7");
     await runJob({
       job,
       agents: agents({
@@ -306,5 +308,230 @@ describe("a question is not an escape from the review budget", () => {
     });
 
     expect(job.readCheckpoint()?.cycles.FIX).toBeGreaterThan(0);
+  });
+});
+
+describe("answering a question", () => {
+  async function pause(question = "Which variant?"): Promise<void> {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question }] }),
+    });
+  }
+
+  test("remembers the question so it can still be answered tomorrow", async () => {
+    await pause();
+
+    expect(job.readCheckpoint()?.question).toBe("Which variant?");
+  });
+
+  test("does not ask the same question over and over", async () => {
+    await pause();
+    const runner = agents();
+
+    const result = await runJob({ job, agents: runner });
+
+    expect(result.state).toBe("PAUSED_WAITING_USER");
+    expect(result.question).toBe("Which variant?");
+    expect(runner.visited).toEqual([]);
+  });
+
+  test("hands the answer to the state that asked", async () => {
+    await pause();
+    recordAnswer(job, "Варіант 7");
+    const seen: (string | undefined)[] = [];
+    const runner: AgentRunner = {
+      run(request) {
+        seen.push(request.answer);
+
+        return Promise.resolve(completed);
+      },
+    };
+
+    await runJob({ job, agents: runner });
+
+    expect(seen[0]).toBe("Варіант 7");
+  });
+
+  test("resumes the state that was interrupted", async () => {
+    await pause();
+    recordAnswer(job, "Варіант 7");
+    const runner = agents();
+
+    await runJob({ job, agents: runner });
+
+    expect(runner.visited[0]).toBe("CONTEXT");
+  });
+
+  test("does not repeat the answer to every later state", async () => {
+    await pause();
+    recordAnswer(job, "Варіант 7");
+    const seen: (string | undefined)[] = [];
+    const runner: AgentRunner = {
+      run(request) {
+        seen.push(request.answer);
+
+        return Promise.resolve(completed);
+      },
+    };
+
+    await runJob({ job, agents: runner });
+
+    expect(seen.slice(1).every((answer) => answer === undefined)).toBe(true);
+    expect(job.readCheckpoint()?.answer).toBeUndefined();
+  });
+
+  test("forgets the question once it has been answered", async () => {
+    await pause();
+    recordAnswer(job, "Варіант 7");
+
+    await runJob({ job, agents: agents() });
+
+    expect(job.readCheckpoint()?.question).toBeUndefined();
+  });
+
+  test("still comes back on its own after a rate limit", async () => {
+    const runner = agents({
+      SOLVE: [{ status: "rate_limited", sessionId: "s1", resumeAt: "2026-08-15T18:00:00.000Z" }],
+    });
+    await runJob({ job, agents: runner });
+
+    const result = await runJob({ job, agents: agents() });
+
+    expect(result.state).toBe("DONE");
+  });
+});
+
+describe("recordAnswer", () => {
+  test("reports the state the job will go back to", async () => {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "?" }] }),
+    });
+
+    expect(recordAnswer(job, "Варіант 7")).toBe("CONTEXT");
+  });
+
+  test("refuses a job that nobody is waiting on", () => {
+    expect(() => recordAnswer(job, "Варіант 7")).toThrow(/INGEST/);
+  });
+
+  test("refuses an answer that says nothing", async () => {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "?" }] }),
+    });
+
+    expect(() => recordAnswer(job, "   ")).toThrow(/empty/);
+  });
+
+  test("refuses an answer far too long to be one", async () => {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "?" }] }),
+    });
+
+    expect(() => recordAnswer(job, "x".repeat(5000))).toThrow(/long/);
+  });
+
+  test("keeps a multi-line answer intact", async () => {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "?" }] }),
+    });
+    recordAnswer(job, "Варіант 7\nМетод: січних");
+
+    expect(job.readCheckpoint()?.answer).toBe("Варіант 7\nМетод: січних");
+  });
+});
+
+describe("an answer that meets a rate limit", () => {
+  test("is not thrown away with the turn that carried it", async () => {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "?" }] }),
+    });
+    recordAnswer(job, "Варіант 7");
+
+    await runJob({
+      job,
+      agents: agents({
+        CONTEXT: [
+          { status: "rate_limited", sessionId: "s1", resumeAt: "2026-08-16T18:00:00.000Z" },
+        ],
+      }),
+    });
+
+    expect(job.readCheckpoint()?.answer).toBe("Варіант 7");
+  });
+
+  test("reaches the agent again once the limit is over", async () => {
+    await runJob({
+      job,
+      agents: agents({ CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "?" }] }),
+    });
+    recordAnswer(job, "Варіант 7");
+    await runJob({
+      job,
+      agents: agents({
+        CONTEXT: [
+          { status: "rate_limited", sessionId: "s1", resumeAt: "2026-08-16T18:00:00.000Z" },
+        ],
+      }),
+    });
+
+    const seen: (string | undefined)[] = [];
+    await runJob({
+      job,
+      agents: {
+        run(request) {
+          seen.push(request.answer);
+
+          return Promise.resolve(completed);
+        },
+      },
+    });
+
+    expect(seen[0]).toBe("Варіант 7");
+  });
+});
+
+describe("the question the answer belongs to", () => {
+  test("travels with the answer to the state that asked", async () => {
+    await runJob({
+      job,
+      agents: agents({
+        CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "Which variant?" }],
+      }),
+    });
+    recordAnswer(job, "Варіант 7");
+
+    const seen: (string | undefined)[] = [];
+    await runJob({
+      job,
+      agents: {
+        run(request) {
+          seen.push(request.question);
+
+          return Promise.resolve(completed);
+        },
+      },
+    });
+
+    expect(seen[0]).toBe("Which variant?");
+  });
+
+  test("is gone once the state has had it", async () => {
+    await runJob({
+      job,
+      agents: agents({
+        CONTEXT: [{ status: "needs_user", sessionId: "s1", question: "Which variant?" }],
+      }),
+    });
+    recordAnswer(job, "Варіант 7");
+
+    await runJob({ job, agents: agents() });
+
+    expect(job.readCheckpoint()?.question).toBeUndefined();
   });
 });

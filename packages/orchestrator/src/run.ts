@@ -7,6 +7,8 @@ export interface AgentRequest {
   job: Job;
   checkpoint: Checkpoint;
   resumeSessionId?: string;
+  question?: string;
+  answer?: string;
 }
 
 export interface AgentRunner {
@@ -30,6 +32,34 @@ export interface RunResult {
 
 const DEFAULT_MAX_STEPS = 60;
 
+export const MAX_ANSWER_LENGTH = 4000;
+
+export function recordAnswer(job: Job, answer: string): JobState {
+  const checkpoint = current(job);
+
+  if (checkpoint.state !== "PAUSED_WAITING_USER") {
+    throw new Error(`Job "${job.id}" is in ${checkpoint.state} and is not waiting for an answer`);
+  }
+
+  if (answer.trim() === "") {
+    throw new Error("The answer is empty");
+  }
+
+  if (answer.length > MAX_ANSWER_LENGTH) {
+    throw new Error(`The answer is too long; keep it under ${MAX_ANSWER_LENGTH} characters`);
+  }
+
+  const target = checkpoint.previousState;
+
+  if (target === undefined) {
+    throw new Error(`Job "${job.id}" was paused with no state to return to`);
+  }
+
+  job.update((current) => ({ ...current, answer }));
+
+  return target;
+}
+
 export async function runJob(request: RunRequest): Promise<RunResult> {
   const { job, agents } = request;
   const logger = withContext(request.logger ?? createLogger({ service: "core" }), {
@@ -46,6 +76,14 @@ export async function runJob(request: RunRequest): Promise<RunResult> {
       checkpoint.state === request.stopBefore
     ) {
       return { state: checkpoint.state, reason: checkpoint.lastError };
+    }
+
+    if (checkpoint.state === "PAUSED_WAITING_USER" && checkpoint.answer === undefined) {
+      return {
+        state: checkpoint.state,
+        question: checkpoint.question,
+        reason: checkpoint.lastError,
+      };
     }
 
     const decision = isPaused(checkpoint.state)
@@ -73,6 +111,10 @@ async function runState(
     job,
     checkpoint,
     resumeSessionId: checkpoint.sessionIds[checkpoint.state],
+    ...(checkpoint.answer !== undefined && {
+      answer: checkpoint.answer,
+      ...(checkpoint.question !== undefined && { question: checkpoint.question }),
+    }),
   });
   const decision = decide(checkpoint, outcome);
 
@@ -100,7 +142,11 @@ function apply(job: Job, decision: Decision): RunResult | undefined {
     return { state: "FAILED", reason: decision.reason };
   }
 
-  note(job, { resumeAt: decision.resumeAt, lastError: decision.reason });
+  note(job, {
+    resumeAt: decision.resumeAt,
+    lastError: decision.reason,
+    question: decision.question,
+  });
 
   if (decision.escalated === true) {
     clearLoop(job);
@@ -149,8 +195,12 @@ function current(job: Job): Checkpoint {
 }
 
 function remember(job: Job, checkpoint: Checkpoint, outcome: AgentOutcome): void {
+  const held = outcome.status === "rate_limited";
+
   job.writeCheckpoint({
     ...checkpoint,
+    answer: held ? checkpoint.answer : undefined,
+    question: held ? checkpoint.question : undefined,
     sessionIds: { ...checkpoint.sessionIds, [checkpoint.state]: outcome.sessionId },
     ...(outcome.findings !== undefined && {
       lastFindings: {
@@ -161,12 +211,16 @@ function remember(job: Job, checkpoint: Checkpoint, outcome: AgentOutcome): void
   });
 }
 
-function note(job: Job, fields: { resumeAt?: string; lastError?: string }): void {
+function note(
+  job: Job,
+  fields: { resumeAt?: string; lastError?: string; question?: string },
+): void {
   const checkpoint = current(job);
 
   job.writeCheckpoint({
     ...checkpoint,
     ...(fields.resumeAt !== undefined && { resumeAt: fields.resumeAt }),
     ...(fields.lastError !== undefined && { lastError: fields.lastError }),
+    ...(fields.question !== undefined && { question: fields.question }),
   });
 }

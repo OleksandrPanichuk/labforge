@@ -35,6 +35,8 @@ export const checkpointSchema = z.object({
   lastError: z.string().optional(),
   lastFindings: z.record(z.enum(JOB_STATES), z.array(z.string())).optional(),
   resumeAt: z.string().optional(),
+  question: z.string().optional(),
+  answer: z.string().optional(),
 });
 
 export type Checkpoint = z.infer<typeof checkpointSchema>;
@@ -82,6 +84,10 @@ export function withState(
   if (!isPaused(state) && state !== "FAILED") {
     next.resumeAt = undefined;
     next.lastError = undefined;
+
+    if (next.answer === undefined) {
+      next.question = undefined;
+    }
   }
 
   return next;

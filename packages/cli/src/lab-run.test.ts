@@ -23,8 +23,8 @@ describe("parseArgs", () => {
     expect(parseArgs(["t.md"], now).variant).toBeUndefined();
   });
 
-  test("defaults the language and lets it be overridden", () => {
-    expect(parseArgs(["t.md"], now).language).toBe("python");
+  test("leaves the language to the job when the command line is silent", () => {
+    expect(parseArgs(["t.md"], now).language).toBeUndefined();
     expect(parseArgs(["t.md", "--language", "C++"], now).language).toBe("C++");
   });
 
@@ -54,8 +54,24 @@ describe("parseArgs", () => {
     expect(parseArgs(["t.md", "--stop-before", "SOLVE"], now).stopBefore).toBe("SOLVE");
   });
 
+  test("answers a waiting job without naming the task file again", () => {
+    const args = parseArgs(["--job", "lab-3-1000", "--answer", "Варіант 7"], now);
+
+    expect(args.jobId).toBe("lab-3-1000");
+    expect(args.answer).toBe("Варіант 7");
+    expect(args.taskPath).toBe("");
+  });
+
+  test("refuses an answer that does not say which job it belongs to", () => {
+    expect(() => parseArgs(["--answer", "Варіант 7"], now)).toThrow(/--job/);
+  });
+
   test("explains itself when given no task", () => {
     expect(() => parseArgs([], now)).toThrow(/Usage/);
+  });
+
+  test("refuses an empty flag value rather than recording it", () => {
+    expect(() => parseArgs(["t.md", "--subject", ""], now)).toThrow(/--subject/);
   });
 
   test("refuses a flag with no value rather than swallowing the next one", () => {

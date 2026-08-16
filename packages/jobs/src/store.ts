@@ -54,6 +54,7 @@ export interface Job {
   readCheckpoint(): Checkpoint | undefined;
   writeCheckpoint(checkpoint: Checkpoint): void;
   advanceTo(state: JobState, now?: string): Checkpoint;
+  update(change: (checkpoint: Checkpoint) => Checkpoint): Checkpoint;
 }
 
 export interface JobStore {
@@ -164,6 +165,21 @@ function job(dir: string, jobId: string): Job {
     dir,
     git,
     reportPath: join(dir, REPORT_FILE),
+    update(change) {
+      return withLock(lockPath, () => {
+        const current = readCheckpoint();
+
+        if (current === undefined) {
+          throw new JobStoreError(`Job "${jobId}" has no checkpoint to change`);
+        }
+
+        const next = change(current);
+
+        writeCheckpoint(next);
+
+        return next;
+      });
+    },
     advanceTo(state, now) {
       return withLock(lockPath, () => {
         const current = readCheckpoint();

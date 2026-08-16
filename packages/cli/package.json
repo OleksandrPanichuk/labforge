@@ -18,7 +18,8 @@
     "@labforge/orchestrator": "workspace:*",
     "@labforge/pipeline": "workspace:*",
     "@labforge/resolver": "workspace:*",
-    "@labforge/sandbox": "workspace:*"
+    "@labforge/sandbox": "workspace:*",
+    "zod": "^3"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14"

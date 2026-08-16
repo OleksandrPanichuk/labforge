@@ -164,3 +164,32 @@ describe("openJob", () => {
     expect(store.listJobs()).toEqual(["job_1", "job_2"]);
   });
 });
+
+describe("update", () => {
+  test("changes one field and keeps the rest", () => {
+    const job = createJobStore(root).createJob("job_1");
+
+    job.update((checkpoint) => ({ ...checkpoint, answer: "Варіант 7" }));
+
+    expect(job.readCheckpoint()?.answer).toBe("Варіант 7");
+    expect(job.readCheckpoint()?.state).toBe("INGEST");
+  });
+
+  test("does not undo a change another holder of the job just made", () => {
+    const store = createJobStore(root);
+    const mine = store.createJob("job_1");
+    const theirs = store.openJob("job_1");
+
+    theirs.advanceTo("CONTEXT");
+    mine.update((checkpoint) => ({ ...checkpoint, answer: "Варіант 7" }));
+
+    expect(mine.readCheckpoint()?.state).toBe("CONTEXT");
+    expect(mine.readCheckpoint()?.answer).toBe("Варіант 7");
+  });
+
+  test("refuses a change that would break the checkpoint", () => {
+    const job = createJobStore(root).createJob("job_1");
+
+    expect(() => job.update((checkpoint) => ({ ...checkpoint, version: 2 }) as never)).toThrow();
+  });
+});
