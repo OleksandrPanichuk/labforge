@@ -28,6 +28,8 @@ export interface LabQueue {
 
 const FINISHED = new Set(["completed", "failed"]);
 
+const GONE = "unknown";
+
 async function admit(queue: Queue, task: LabTask): Promise<boolean> {
   const existing = await queue.getJob(task.jobId);
 
@@ -35,7 +37,13 @@ async function admit(queue: Queue, task: LabTask): Promise<boolean> {
     return true;
   }
 
-  if (!FINISHED.has(await existing.getState())) {
+  const state = await existing.getState();
+
+  if (state === GONE) {
+    return true;
+  }
+
+  if (!FINISHED.has(state)) {
     return false;
   }
 
@@ -50,23 +58,21 @@ export function createLabQueue(options: LabQueueOptions = {}): LabQueue {
 
   return {
     name,
-    enqueue(task, enqueueOptions = {}) {
+    async enqueue(task, enqueueOptions = {}) {
       const parsed = labTaskSchema.parse(task);
 
-      return admit(queue, parsed).then(async (admitted) => {
-        if (!admitted) {
-          return false;
-        }
+      if (!(await admit(queue, parsed))) {
+        return false;
+      }
 
-        await queue.add(parsed.jobId, parsed, {
-          jobId: parsed.jobId,
-          removeOnComplete: true,
-          removeOnFail: 100,
-          ...(enqueueOptions.delayMs !== undefined && { delay: enqueueOptions.delayMs }),
-        });
-
-        return true;
+      await queue.add(parsed.jobId, parsed, {
+        jobId: parsed.jobId,
+        removeOnComplete: true,
+        removeOnFail: 100,
+        ...(enqueueOptions.delayMs !== undefined && { delay: enqueueOptions.delayMs }),
       });
+
+      return true;
     },
     async counts() {
       const counts = await queue.getJobCounts("waiting", "active", "delayed", "failed");

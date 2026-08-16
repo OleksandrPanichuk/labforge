@@ -350,6 +350,6 @@ test.skipIf(!available)("gives up on a limit that never says when it resets", as
   expect(attempts).toBe(3);
 });
 
-test.skipIf(!available)("refuses a task that does not name a lab", () => {
-  expect(() => theQueue().enqueue({ jobId: "" } as LabTask)).toThrow(/jobId/);
+test.skipIf(!available)("refuses a task that does not name a lab", async () => {
+  await expect(theQueue().enqueue({ jobId: "" } as LabTask)).rejects.toThrow(/jobId/);
 });

@@ -13,3 +13,7 @@ export function delayUntil(resumeAt: string | undefined, now = new Date()): numb
 
   return Math.min(Math.max(0, target - now.getTime()), MAX_DELAY_MS);
 }
+
+export function parkFor(resumeAt: string | undefined, floorMs: number, now = new Date()): number {
+  return Math.max(delayUntil(resumeAt, now), floorMs);
+}

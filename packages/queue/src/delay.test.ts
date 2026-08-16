@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { delayUntil, MAX_DELAY_MS } from "./delay";
+import { delayUntil, MAX_DELAY_MS, parkFor } from "./delay";
 
 const now = new Date("2026-08-16T10:00:00.000Z");
 
@@ -22,5 +22,23 @@ describe("delayUntil", () => {
 
   test("treats an unparsable reset as no reset", () => {
     expect(delayUntil("tomorrow, probably", now)).toBe(0);
+  });
+});
+
+describe("parkFor", () => {
+  test("waits out a limit that says when it resets", () => {
+    expect(parkFor("2026-08-16T10:30:00.000Z", 60_000, now)).toBe(30 * 60 * 1000);
+  });
+
+  test("does not retry at once when the limit says nothing", () => {
+    expect(parkFor(undefined, 60_000, now)).toBe(60_000);
+  });
+
+  test("does not retry at once when the reset has already passed", () => {
+    expect(parkFor("2026-08-16T09:00:00.000Z", 60_000, now)).toBe(60_000);
+  });
+
+  test("lets a caller ask for no waiting at all", () => {
+    expect(parkFor(undefined, 0, now)).toBe(0);
   });
 });

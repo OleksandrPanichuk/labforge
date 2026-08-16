@@ -1,7 +1,7 @@
 import { createLogger, type Logger, withContext } from "@labforge/logger";
 import { DelayedError, type Job, Worker } from "bullmq";
 import { connectionFor, redisUrl } from "./connection";
-import { delayUntil } from "./delay";
+import { parkFor } from "./delay";
 import { LAB_QUEUE, type LabOutcome, type LabTask, labTaskSchema } from "./task";
 
 export const MIN_RATE_LIMIT_DELAY_MS = 60_000;
@@ -62,7 +62,7 @@ export function createLabWorker(options: LabWorkerOptions): LabWorker {
         );
       }
 
-      const delayMs = Math.max(delayUntil(outcome.resumeAt), floor);
+      const delayMs = parkFor(outcome.resumeAt, floor);
 
       logger.info({ jobId: task.jobId, delayMs, parks: parks + 1 }, "lab parked until the reset");
       await job.updateData({ ...task, answer: undefined, parks: parks + 1 });

@@ -1,5 +1,5 @@
 export { connectionFor, DEFAULT_REDIS_URL, redisReachable, redisUrl } from "./connection";
-export { delayUntil, MAX_DELAY_MS } from "./delay";
+export { delayUntil, MAX_DELAY_MS, parkFor } from "./delay";
 export {
   createLabQueue,
   type EnqueueOptions,
