@@ -75,6 +75,11 @@ describe("parseArgs", () => {
     expect(parseArgs(["t.md", "--queue", "--subject", "nm"], now).subject).toBe("nm");
   });
 
+  test("refuses flags the queue would quietly ignore", () => {
+    expect(() => parseArgs(["t.md", "--queue", "--stop-before", "SOLVE"], now)).toThrow(/--queue/);
+    expect(() => parseArgs(["t.md", "--queue", "--jobs-dir", "other"], now)).toThrow(/--queue/);
+  });
+
   test("explains itself when given no task", () => {
     expect(() => parseArgs([], now)).toThrow(/Usage/);
   });

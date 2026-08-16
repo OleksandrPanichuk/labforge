@@ -1,32 +1,25 @@
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { createLogger } from "@labforge/logger";
-import { createLabQueue } from "@labforge/queue";
 import { labRun, type ParsedArgs, parseArgs } from "./lab-run";
+import { queueLab } from "./queue-lab";
 
 const logger = createLogger({ service: "cli" });
 
 const EXIT = { done: 0, failed: 1, paused: 2 };
 
 async function enqueue(options: ParsedArgs): Promise<number> {
-  const queue = createLabQueue();
+  const outcome = await queueLab({ options });
 
-  let queued: boolean;
+  if (outcome.answerDropped) {
+    logger.error(
+      { jobId: options.jobId },
+      "that lab is already in the queue, so the answer was not delivered; wait for it to pause again",
+    );
 
-  try {
-    queued = await queue.enqueue({
-      jobId: options.jobId,
-      ...(options.taskPath !== "" && { taskPath: resolve(options.taskPath) }),
-      ...(options.subject !== undefined && { subject: options.subject }),
-      ...(options.teacher !== undefined && { teacher: options.teacher }),
-      ...(options.variant !== undefined && { variant: options.variant }),
-      ...(options.language !== undefined && { language: options.language }),
-      ...(options.answer !== undefined && { answer: options.answer }),
-    });
-  } finally {
-    await queue.close();
+    return EXIT.failed;
   }
 
-  if (!queued) {
+  if (!outcome.queued) {
     logger.warn({ jobId: options.jobId }, "that lab is already in the queue; nothing to do");
 
     return EXIT.done;
@@ -40,7 +33,7 @@ async function enqueue(options: ParsedArgs): Promise<number> {
 async function main(): Promise<number> {
   const options = parseArgs(process.argv.slice(2));
 
-  if (options.queue === true) {
+  if (options.queue) {
     return await enqueue(options);
   }
 

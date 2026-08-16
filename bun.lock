@@ -73,6 +73,7 @@
         "@labforge/logger": "workspace:*",
         "@labforge/orchestrator": "workspace:*",
         "@labforge/pipeline": "workspace:*",
+        "@labforge/queue": "workspace:*",
         "@labforge/resolver": "workspace:*",
         "@labforge/sandbox": "workspace:*",
         "zod": "^3",

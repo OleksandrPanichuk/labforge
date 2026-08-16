@@ -16,7 +16,6 @@ export interface LabRunOptions {
   teacher?: string;
   variant?: string;
   answer?: string;
-  queue?: boolean;
   language?: string;
   jobId: string;
   jobsDir: string;
@@ -26,7 +25,11 @@ export interface LabRunOptions {
   logger?: Logger;
 }
 
-export interface ParsedArgs extends Omit<LabRunOptions, "logger"> {}
+export interface ParsedArgs extends Omit<LabRunOptions, "logger"> {
+  queue: boolean;
+}
+
+const WORKER_OWNED = ["stop-before", "jobs-dir", "configs-dir", "agents-dir"];
 
 const DEFAULTS = {
   jobsDir: "jobs",
@@ -76,6 +79,16 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
 
   if (answer !== undefined && named === undefined) {
     throw new Error("--answer needs --job <id> so the answer reaches the right lab");
+  }
+
+  if (flags.get("queue") === "true") {
+    const ignored = WORKER_OWNED.filter((flag) => flags.has(flag));
+
+    if (ignored.length > 0) {
+      throw new Error(
+        `--queue cannot be combined with ${ignored.map((flag) => `--${flag}`).join(", ")}: the worker decides those`,
+      );
+    }
   }
 
   if (taskPath === undefined) {
