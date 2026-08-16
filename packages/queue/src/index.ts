@@ -13,5 +13,6 @@ export {
   type LabWorker,
   type LabWorkerOptions,
   LOCK_DURATION_MS,
+  MAX_PARKS,
   MIN_RATE_LIMIT_DELAY_MS,
 } from "./worker";

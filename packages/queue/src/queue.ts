@@ -20,10 +20,28 @@ export interface LabCounts {
 
 export interface LabQueue {
   name: string;
-  enqueue(task: LabTask, options?: EnqueueOptions): Promise<void>;
+  enqueue(task: LabTask, options?: EnqueueOptions): Promise<boolean>;
   counts(): Promise<LabCounts>;
   obliterate(): Promise<void>;
   close(): Promise<void>;
+}
+
+const FINISHED = new Set(["completed", "failed"]);
+
+async function admit(queue: Queue, task: LabTask): Promise<boolean> {
+  const existing = await queue.getJob(task.jobId);
+
+  if (existing === undefined) {
+    return true;
+  }
+
+  if (!FINISHED.has(await existing.getState())) {
+    return false;
+  }
+
+  await existing.remove();
+
+  return true;
 }
 
 export function createLabQueue(options: LabQueueOptions = {}): LabQueue {
@@ -35,14 +53,20 @@ export function createLabQueue(options: LabQueueOptions = {}): LabQueue {
     enqueue(task, enqueueOptions = {}) {
       const parsed = labTaskSchema.parse(task);
 
-      return queue
-        .add(parsed.jobId, parsed, {
+      return admit(queue, parsed).then(async (admitted) => {
+        if (!admitted) {
+          return false;
+        }
+
+        await queue.add(parsed.jobId, parsed, {
           jobId: parsed.jobId,
           removeOnComplete: true,
           removeOnFail: 100,
           ...(enqueueOptions.delayMs !== undefined && { delay: enqueueOptions.delayMs }),
-        })
-        .then(() => undefined);
+        });
+
+        return true;
+      });
     },
     async counts() {
       const counts = await queue.getJobCounts("waiting", "active", "delayed", "failed");

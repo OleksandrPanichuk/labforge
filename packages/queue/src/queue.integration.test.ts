@@ -240,6 +240,116 @@ test.skipIf(!available)("carries on after a lab blows up", async () => {
   expect(seen).toContain("job_1");
 });
 
+test.skipIf(!available)("lets a lab that blew up be queued again", async () => {
+  const seen: string[] = [];
+
+  worker = createLabWorker({
+    url: URL,
+    name,
+    run: (job) => {
+      seen.push(job.jobId);
+
+      return seen.length === 1
+        ? Promise.reject(new Error("docker was not running"))
+        : Promise.resolve({ state: "DONE" as const });
+    },
+  });
+
+  await theQueue().enqueue(task("job_1"));
+  await until(async () => (await theQueue().counts()).failed === 1);
+
+  expect(await theQueue().enqueue(task("job_1"))).toBe(true);
+  await until(() => seen.length === 2);
+
+  expect(seen).toEqual(["job_1", "job_1"]);
+});
+
+test.skipIf(!available)(
+  "says so rather than pretending when the lab is already queued",
+  async () => {
+    await theQueue().enqueue(task("job_1"));
+
+    expect(await theQueue().enqueue(task("job_1"))).toBe(false);
+  },
+);
+
+test.skipIf(!available)("gives the woken lab back the task it was queued with", async () => {
+  const seen: LabTask[] = [];
+
+  worker = createLabWorker({
+    url: URL,
+    name,
+    minRateLimitDelayMs: 0,
+    run: (job) => {
+      seen.push(job);
+
+      return seen.length === 1
+        ? Promise.resolve({
+            state: "PAUSED_RATE_LIMIT" as const,
+            resumeAt: new Date(Date.now() + 100).toISOString(),
+          })
+        : Promise.resolve({ state: "DONE" as const });
+    },
+  });
+
+  await theQueue().enqueue({
+    jobId: "job_1",
+    taskPath: "data/lab.md",
+    subject: "nm",
+    variant: "7",
+  });
+  await until(() => seen.length === 2);
+
+  expect(seen[1]).toEqual(seen[0] as LabTask);
+});
+
+test.skipIf(!available)("delivers the student's answer once, not on every wake", async () => {
+  const seen: (string | undefined)[] = [];
+
+  worker = createLabWorker({
+    url: URL,
+    name,
+    minRateLimitDelayMs: 0,
+    run: (job) => {
+      seen.push(job.answer);
+
+      return seen.length === 1
+        ? Promise.resolve({
+            state: "PAUSED_RATE_LIMIT" as const,
+            resumeAt: new Date(Date.now() + 100).toISOString(),
+          })
+        : Promise.resolve({ state: "DONE" as const });
+    },
+  });
+
+  await theQueue().enqueue({ jobId: "job_1", answer: "Варіант 7" });
+  await until(() => seen.length === 2);
+
+  expect(seen[0]).toBe("Варіант 7");
+  expect(seen[1]).toBeUndefined();
+});
+
+test.skipIf(!available)("gives up on a limit that never says when it resets", async () => {
+  let attempts = 0;
+
+  worker = createLabWorker({
+    url: URL,
+    name,
+    minRateLimitDelayMs: 0,
+    maxParks: 2,
+    run: () => {
+      attempts += 1;
+
+      return Promise.resolve({ state: "PAUSED_RATE_LIMIT" as const });
+    },
+  });
+
+  await theQueue().enqueue(task("job_1"));
+  await until(async () => (await theQueue().counts()).failed === 1);
+
+  expect(attempts).toBe(3);
+});
+
 test.skipIf(!available)("refuses a task that does not name a lab", () => {
   expect(() => theQueue().enqueue({ jobId: "" } as LabTask)).toThrow(/jobId/);
 });
