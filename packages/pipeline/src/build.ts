@@ -10,6 +10,7 @@ import {
   writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { type StudentProfile, studentProfileSchema } from "@labforge/configs";
 import { type ReportIR, reportIR, type ValidationIssue, validateReport } from "@labforge/ir";
 import type { Job } from "@labforge/jobs";
 import { renderReport } from "@labforge/renderer-docx";
@@ -24,6 +25,8 @@ import { generatedArtifacts, jobProbe } from "./probe";
 export type BuildStage = "read" | "validate" | "resolve" | "verify" | "render";
 
 export const DOCX_FILE = "report.docx";
+
+const STUDENT_CONTEXT = join("context", "student.json");
 
 export class BuildError extends Error {
   constructor(
@@ -56,16 +59,21 @@ export async function buildReport(request: BuildRequest): Promise<BuildResult> {
   const { job } = request;
   const mode = request.mode ?? "full";
   const docxPath = join(job.dir, DOCX_FILE);
-  const document = readReport(job.reportPath);
-  const pending = generatedArtifacts(document);
+  const read = readReport(job.reportPath);
   const warnings: ValidationIssue[] = [];
 
   if (mode === "render") {
-    check(document, "verify", { phase: "post-resolve", files: jobProbe(job.dir) });
-    writeAtomically(docxPath, await render(document, job.dir));
+    check(read, "verify", { phase: "post-resolve", files: jobProbe(job.dir) });
+    writeAtomically(docxPath, await render(read, job.dir));
 
-    return { docxPath, ir: document, runs: [], warnings };
+    return { docxPath, ir: read, runs: [], warnings };
   }
+
+  const stamped = stampStudent(read, job.dir);
+  const document = stamped.ir;
+  const pending = generatedArtifacts(document);
+
+  warnings.push(...stamped.warnings);
 
   try {
     warnings.push(
@@ -137,6 +145,56 @@ function readReport(path: string): ReportIR {
   }
 
   return parsed.data;
+}
+
+function stampStudent(
+  document: ReportIR,
+  jobDir: string,
+): { ir: ReportIR; warnings: ValidationIssue[] } {
+  const path = join(jobDir, STUDENT_CONTEXT);
+
+  if (!existsSync(path)) {
+    return { ir: document, warnings: [] };
+  }
+
+  let raw: unknown;
+
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    throw new BuildError("read", `${STUDENT_CONTEXT} is not valid JSON`);
+  }
+
+  const parsed = studentProfileSchema.safeParse(raw);
+
+  if (!parsed.success) {
+    throw new BuildError("read", `${STUDENT_CONTEXT} is not a usable student profile`);
+  }
+
+  const student = parsed.data;
+
+  if (sameStudent(document.meta.student, student)) {
+    return { ir: document, warnings: [] };
+  }
+
+  return {
+    ir: { ...document, meta: { ...document.meta, student } },
+    warnings: [
+      {
+        rule: "student-identity",
+        severity: "warning",
+        message: `The report named "${document.meta.student.name}"; ${STUDENT_CONTEXT} says "${student.name}" and that is what the report now carries`,
+      },
+    ],
+  };
+}
+
+function sameStudent(inReport: StudentProfile, profile: StudentProfile): boolean {
+  return (
+    inReport.name === profile.name &&
+    inReport.group === profile.group &&
+    inReport.variant === profile.variant
+  );
 }
 
 function check(

@@ -13,6 +13,7 @@
     "@types/bun": "^1.3.14"
   },
   "dependencies": {
+    "@labforge/configs": "workspace:*",
     "@labforge/ir": "workspace:*",
     "@labforge/jobs": "workspace:*",
     "@labforge/renderer-docx": "workspace:*",

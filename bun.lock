@@ -159,6 +159,7 @@
       "name": "@labforge/pipeline",
       "version": "0.0.1",
       "dependencies": {
+        "@labforge/configs": "workspace:*",
         "@labforge/ir": "workspace:*",
         "@labforge/jobs": "workspace:*",
         "@labforge/renderer-docx": "workspace:*",

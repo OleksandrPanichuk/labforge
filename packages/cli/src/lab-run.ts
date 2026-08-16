@@ -11,6 +11,7 @@ export interface LabRunOptions {
   taskPath: string;
   subject?: string;
   teacher?: string;
+  variant?: string;
   language: string;
   jobId: string;
   jobsDir: string;
@@ -56,7 +57,7 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
 
   if (taskPath === undefined) {
     throw new Error(
-      "Usage: bun run lab:run <task-file> --subject <subject> [--teacher <name>] [--language python]",
+      "Usage: bun run lab:run <task-file> --subject <subject> [--teacher <name>] [--variant <n>] [--language python]",
     );
   }
 
@@ -64,6 +65,7 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
     taskPath,
     subject: flags.get("subject"),
     teacher: flags.get("teacher"),
+    variant: flags.get("variant"),
     language: flags.get("language") ?? DEFAULTS.language,
     jobId: flags.get("job") ?? `lab-${slug(basename(taskPath))}-${now()}`,
     jobsDir: flags.get("jobs-dir") ?? DEFAULTS.jobsDir,
@@ -98,6 +100,7 @@ export async function labRun(options: LabRunOptions): Promise<RunResult> {
     taskPath: options.taskPath,
     subject: options.subject,
     teacher: options.teacher,
+    variant: options.variant,
     runtime,
     cells: cellRunner(job.dir, runtime),
   });

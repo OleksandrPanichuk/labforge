@@ -1,6 +1,11 @@
 import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { configFilesAt, findTeacherSlug, resolveConfigs } from "@labforge/configs";
+import {
+  configFilesAt,
+  findTeacherSlug,
+  readStudentProfile,
+  resolveConfigs,
+} from "@labforge/configs";
 import { ingestDocument } from "@labforge/ingest";
 import type { Job } from "@labforge/jobs";
 import type { AgentOutcome, AgentRequest, AgentRunner } from "@labforge/orchestrator";
@@ -14,6 +19,7 @@ export interface DispatcherOptions {
   taskPath: string;
   subject?: string;
   teacher?: string;
+  variant?: string;
   runtime: Runtime;
   cells: CellRunner;
 }
@@ -90,7 +96,13 @@ function writeContext(options: DispatcherOptions, job: Job): void {
       ? undefined
       : (findTeacherSlug(options.teacher, files) ?? options.teacher);
   const resolved = resolveConfigs({ subject: options.subject, teacher }, files);
+  const student = readStudentProfile(files, { variant: options.variant });
 
+  writeFileSync(
+    join(job.dir, "context", "student.json"),
+    `${JSON.stringify(student, null, 2)}\n`,
+    "utf8",
+  );
   writeFileSync(join(job.dir, "context", "requirements.md"), resolved.requirements, "utf8");
   writeFileSync(join(job.dir, "context", "style_guide.md"), resolved.styleGuide, "utf8");
   writeFileSync(

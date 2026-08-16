@@ -68,6 +68,10 @@ beforeEach(() => {
   writeFileSync(join(configsDir, "REQUIREMENTS.md"), "base requirements");
   writeFileSync(join(configsDir, "STYLE_GUIDE.md"), "base styles");
   writeFileSync(join(configsDir, "teachers", "ivanenko", "REQUIREMENTS.md"), "teacher rules");
+  writeFileSync(
+    join(configsDir, "student.json"),
+    JSON.stringify({ name: "Панічук О. В.", group: "ІП-21" }),
+  );
   writeFileSync(join(root, "task.md"), "# Лабораторна 1\n\nЗавдання.");
 });
 
@@ -114,6 +118,43 @@ describe("ingest", () => {
     const outcome = await dispatcher(agent()).run(ask("INGEST"));
 
     expect(outcome.status).toBe("failed");
+  });
+
+  test("puts the identity where the report writer must copy it from", async () => {
+    await dispatcher(agent()).run(ask("INGEST"));
+
+    const student = JSON.parse(readFileSync(join(job.dir, "context", "student.json"), "utf8"));
+
+    expect(student).toEqual({ name: "Панічук О. В.", group: "ІП-21" });
+  });
+
+  test("records the variant this particular lab was given", async () => {
+    const withVariant = createDispatcher({
+      agent: agent(),
+      configsDir,
+      taskPath: join(root, "task.md"),
+      subject: "numeric-methods",
+      variant: "7",
+      runtime: RUNTIMES.python,
+      cells: {
+        run: () => Promise.resolve({ exitCode: 0, stdout: "{}", stderr: "", durationMs: 1 }),
+      },
+    });
+
+    await withVariant.run(ask("INGEST"));
+
+    const student = JSON.parse(readFileSync(join(job.dir, "context", "student.json"), "utf8"));
+
+    expect(student.variant).toBe("7");
+  });
+
+  test("refuses to start a lab whose author is unknown", async () => {
+    rmSync(join(configsDir, "student.json"));
+
+    const outcome = await dispatcher(agent()).run(ask("INGEST"));
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toContain("student.json");
   });
 
   test("does not call an agent", async () => {

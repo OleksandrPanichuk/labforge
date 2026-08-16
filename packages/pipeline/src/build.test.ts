@@ -224,3 +224,73 @@ describe("failure stages", () => {
     expect(JSON.parse(readFileSync(job.reportPath, "utf8"))).toEqual(original);
   });
 });
+
+describe("student identity", () => {
+  function writeProfile(profile: Record<string, string>): void {
+    writeFileSync(
+      join(job.dir, "context", "student.json"),
+      JSON.stringify(profile, null, 2),
+      "utf8",
+    );
+  }
+
+  test("stamps the identity from the job context over whatever the agent wrote", async () => {
+    writeProfile({ name: "Панічук О. В.", group: "ІП-21", variant: "7" });
+    writeIR(reportIR());
+
+    const result = await buildReport({ job, cells: runner(workingCell) });
+
+    expect(result.ir.meta.student).toEqual({
+      name: "Панічук О. В.",
+      group: "ІП-21",
+      variant: "7",
+    });
+    expect(JSON.parse(readFileSync(job.reportPath, "utf8")).meta.student.name).toBe(
+      "Панічук О. В.",
+    );
+  });
+
+  test("warns that the agent had invented a different identity", async () => {
+    writeProfile({ name: "Панічук О. В.", group: "ІП-21" });
+    writeIR(reportIR());
+
+    const result = await buildReport({ job, cells: runner(workingCell) });
+
+    expect(result.warnings.some((issue) => issue.rule === "student-identity")).toBe(true);
+  });
+
+  test("says nothing when the agent copied the identity correctly", async () => {
+    writeProfile({ name: "Student", group: "IP-21" });
+    writeIR(reportIR());
+
+    const result = await buildReport({ job, cells: runner(workingCell) });
+
+    expect(result.warnings.some((issue) => issue.rule === "student-identity")).toBe(false);
+  });
+
+  test("builds a job that has no profile at all", async () => {
+    writeIR(reportIR());
+
+    const result = await buildReport({ job, cells: runner(workingCell) });
+
+    expect(result.ir.meta.student.name).toBe("Student");
+  });
+
+  test("refuses to build when the profile itself is broken", async () => {
+    writeFileSync(join(job.dir, "context", "student.json"), "{ broken", "utf8");
+    writeIR(reportIR());
+
+    await expect(buildReport({ job, cells: runner(workingCell) })).rejects.toThrow(/student\.json/);
+  });
+
+  test("does not restamp when only rendering what the student approved", async () => {
+    writeProfile({ name: "Панічук О. В.", group: "ІП-21" });
+    writeIR(reportIR());
+    await buildReport({ job, cells: runner(workingCell) });
+
+    writeProfile({ name: "Хтось Інший", group: "ІП-99" });
+    const result = await buildReport({ job, cells: runner(workingCell), mode: "render" });
+
+    expect(result.ir.meta.student.name).toBe("Панічук О. В.");
+  });
+});
