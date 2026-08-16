@@ -12,4 +12,4 @@ export interface LogContext {
   [key: string]: unknown;
 }
 
-export type ServiceName = "core" | "tg-bot" | "web" | "cli";
+export type ServiceName = "core" | "tg-bot" | "web" | "cli" | "queue";
