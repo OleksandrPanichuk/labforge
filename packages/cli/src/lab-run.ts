@@ -16,6 +16,7 @@ export interface LabRunOptions {
   teacher?: string;
   variant?: string;
   answer?: string;
+  queue?: boolean;
   language?: string;
   jobId: string;
   jobsDir: string;
@@ -34,6 +35,8 @@ const DEFAULTS = {
   stopBefore: "HUMAN_REVIEW" as JobState,
 };
 
+const BOOLEAN_FLAGS = new Set(["queue"]);
+
 function splitArgv(argv: string[]): { flags: Map<string, string>; positional: string[] } {
   const flags = new Map<string, string>();
   const positional: string[] = [];
@@ -42,6 +45,11 @@ function splitArgv(argv: string[]): { flags: Map<string, string>; positional: st
     const argument = argv[index] ?? "";
 
     if (argument.startsWith("--")) {
+      if (BOOLEAN_FLAGS.has(argument.slice(2))) {
+        flags.set(argument.slice(2), "true");
+        continue;
+      }
+
       const value = argv[index + 1];
 
       if (value === undefined || value.startsWith("--") || value.trim() === "") {
@@ -80,6 +88,7 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
   return {
     taskPath,
     ...(answer !== undefined && { answer }),
+    queue: flags.get("queue") === "true",
     subject: flags.get("subject"),
     teacher: flags.get("teacher"),
     variant: flags.get("variant"),

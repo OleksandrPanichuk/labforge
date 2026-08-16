@@ -1,13 +1,41 @@
 import { join } from "node:path";
 import { createLogger } from "@labforge/logger";
-import { labRun, parseArgs } from "./lab-run";
+import { createLabQueue } from "@labforge/queue";
+import { labRun, type ParsedArgs, parseArgs } from "./lab-run";
 
 const logger = createLogger({ service: "cli" });
 
 const EXIT = { done: 0, failed: 1, paused: 2 };
 
+async function enqueue(options: ParsedArgs): Promise<number> {
+  const queue = createLabQueue();
+
+  try {
+    await queue.enqueue({
+      jobId: options.jobId,
+      ...(options.taskPath !== "" && { taskPath: options.taskPath }),
+      ...(options.subject !== undefined && { subject: options.subject }),
+      ...(options.teacher !== undefined && { teacher: options.teacher }),
+      ...(options.variant !== undefined && { variant: options.variant }),
+      ...(options.language !== undefined && { language: options.language }),
+      ...(options.answer !== undefined && { answer: options.answer }),
+    });
+  } finally {
+    await queue.close();
+  }
+
+  logger.info({ jobId: options.jobId }, "the lab is in the queue; run lab:worker to work it off");
+
+  return EXIT.done;
+}
+
 async function main(): Promise<number> {
   const options = parseArgs(process.argv.slice(2));
+
+  if (options.queue === true) {
+    return await enqueue(options);
+  }
+
   const result = await labRun(options);
   const jobDir = join(options.jobsDir, options.jobId);
 

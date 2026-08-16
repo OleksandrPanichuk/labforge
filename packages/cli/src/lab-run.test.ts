@@ -66,6 +66,15 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--answer", "Варіант 7"], now)).toThrow(/--job/);
   });
 
+  test("can send the lab to the queue instead of running it here", () => {
+    expect(parseArgs(["t.md", "--queue"], now).queue).toBe(true);
+    expect(parseArgs(["t.md"], now).queue).toBe(false);
+  });
+
+  test("does not swallow the flag that follows --queue", () => {
+    expect(parseArgs(["t.md", "--queue", "--subject", "nm"], now).subject).toBe("nm");
+  });
+
   test("explains itself when given no task", () => {
     expect(() => parseArgs([], now)).toThrow(/Usage/);
   });
