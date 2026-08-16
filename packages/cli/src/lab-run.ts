@@ -2,10 +2,11 @@ import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { claudeSession, createAgentRunner } from "@labforge/agent";
 import { configFilesAt, readStudentProfile } from "@labforge/configs";
-import { createJobStore, JOB_STATES, type JobState } from "@labforge/jobs";
+import { JOB_STATES, type JobState } from "@labforge/jobs";
 import { createLogger, type Logger, withContext } from "@labforge/logger";
 import { type RunResult, runJob } from "@labforge/orchestrator";
 import { DockerodeEngine, type Runtime, runInSandbox, runtimeFor } from "@labforge/sandbox";
+import { prepareJob } from "./answer";
 import { createDispatcher } from "./dispatch";
 
 export interface LabRunOptions {
@@ -13,6 +14,7 @@ export interface LabRunOptions {
   subject?: string;
   teacher?: string;
   variant?: string;
+  answer?: string;
   language: string;
   jobId: string;
   jobsDir: string;
@@ -32,7 +34,7 @@ const DEFAULTS = {
   stopBefore: "HUMAN_REVIEW" as JobState,
 };
 
-export function parseArgs(argv: string[], now: () => string = () => `${Date.now()}`): ParsedArgs {
+function splitArgv(argv: string[]): { flags: Map<string, string>; positional: string[] } {
   const flags = new Map<string, string>();
   const positional: string[] = [];
 
@@ -54,21 +56,35 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
     positional.push(argument);
   }
 
-  const taskPath = positional[0];
+  return { flags, positional };
+}
+
+export function parseArgs(argv: string[], now: () => string = () => `${Date.now()}`): ParsedArgs {
+  const { flags, positional } = splitArgv(argv);
+
+  const answer = flags.get("answer");
+  const named = flags.get("job");
+  const taskPath = positional[0] ?? (answer === undefined ? undefined : "");
+
+  if (answer !== undefined && named === undefined) {
+    throw new Error("--answer needs --job <id> so the answer reaches the right lab");
+  }
 
   if (taskPath === undefined) {
     throw new Error(
-      "Usage: bun run lab:run <task-file> --subject <subject> [--teacher <name>] [--variant <n>] [--language python]",
+      "Usage: bun run lab:run <task-file> --subject <subject> [--teacher <name>] [--variant <n>] [--language python]\n" +
+        "       bun run lab:run --job <id> --answer <text>",
     );
   }
 
   return {
     taskPath,
+    ...(answer !== undefined && { answer }),
     subject: flags.get("subject"),
     teacher: flags.get("teacher"),
     variant: flags.get("variant"),
     language: flags.get("language") ?? DEFAULTS.language,
-    jobId: flags.get("job") ?? `lab-${slug(basename(taskPath))}-${now()}`,
+    jobId: named ?? `lab-${slug(basename(taskPath))}-${now()}`,
     jobsDir: flags.get("jobs-dir") ?? DEFAULTS.jobsDir,
     configsDir: flags.get("configs-dir") ?? DEFAULTS.configsDir,
     agentsDir: flags.get("agents-dir") ?? DEFAULTS.agentsDir,
@@ -78,8 +94,11 @@ export function parseArgs(argv: string[], now: () => string = () => `${Date.now(
 
 export async function labRun(options: LabRunOptions): Promise<RunResult> {
   const runtime = runtimeFor(options.language);
-  const store = createJobStore(options.jobsDir);
-  const job = store.openJob(options.jobId, { create: true });
+  const job = prepareJob({
+    jobsDir: options.jobsDir,
+    jobId: options.jobId,
+    ...(options.answer !== undefined && { answer: options.answer }),
+  });
 
   if (job.readCheckpoint()?.state === "INGEST" && !existsSync(options.taskPath)) {
     throw new Error(`No task file at ${options.taskPath}`);

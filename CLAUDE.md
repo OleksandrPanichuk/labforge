@@ -57,7 +57,7 @@ docs/              # architecture documentation
 plus `PAUSED_RATE_LIMIT`, `PAUSED_WAITING_USER`, `FAILED`, `CANCELLED` — reachable from any state.
 
 - Rate limit from the SDK → `PAUSED_RATE_LIMIT`, a delayed BullMQ job scheduled for the reset time, then `resume: sessionId`; if the session has expired, rerun the current state from its checkpoint.
-- The `ask_user` tool → `PAUSED_WAITING_USER`, session id stored, worker released; an answer from Telegram or the web resumes it.
+- The `ask_user` tool → `PAUSED_WAITING_USER`, question and session id stored, worker released. The job stays there until an answer arrives (`recordAnswer`, or `lab:run --job <id> --answer`); Telegram and the web feed the same field.
 - Watchdog: a state with no progress for 30 min alerts the owner on Telegram.
 
 ## Code conventions

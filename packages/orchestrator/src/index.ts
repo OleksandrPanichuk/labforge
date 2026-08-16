@@ -11,7 +11,9 @@ export {
 export {
   type AgentRequest,
   type AgentRunner,
+  MAX_ANSWER_LENGTH,
   type RunRequest,
   type RunResult,
+  recordAnswer,
   runJob,
 } from "./run";

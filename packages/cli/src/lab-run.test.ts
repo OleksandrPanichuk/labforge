@@ -54,6 +54,18 @@ describe("parseArgs", () => {
     expect(parseArgs(["t.md", "--stop-before", "SOLVE"], now).stopBefore).toBe("SOLVE");
   });
 
+  test("answers a waiting job without naming the task file again", () => {
+    const args = parseArgs(["--job", "lab-3-1000", "--answer", "Варіант 7"], now);
+
+    expect(args.jobId).toBe("lab-3-1000");
+    expect(args.answer).toBe("Варіант 7");
+    expect(args.taskPath).toBe("");
+  });
+
+  test("refuses an answer that does not say which job it belongs to", () => {
+    expect(() => parseArgs(["--answer", "Варіант 7"], now)).toThrow(/--job/);
+  });
+
   test("explains itself when given no task", () => {
     expect(() => parseArgs([], now)).toThrow(/Usage/);
   });

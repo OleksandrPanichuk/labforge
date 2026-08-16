@@ -20,7 +20,9 @@ async function main(): Promise<number> {
   if (result.state.startsWith("PAUSED")) {
     logger.warn(
       { jobDir, question: result.question, resumeAt: result.resumeAt, reason: result.reason },
-      "the lab is waiting; run the same command again to continue",
+      result.question === undefined
+        ? "the lab is waiting; run the same command again to continue"
+        : `the lab is waiting for an answer; reply with: bun run lab:run --job ${options.jobId} --answer "..."`,
     );
 
     return EXIT.paused;
