@@ -15,10 +15,13 @@ export interface LabWorkerOptions extends WorkerDirectories {
   run?(options: LabRunOptions): Promise<RunResult>;
 }
 
+export const QUEUE_STOPS_BEFORE = "HUMAN_REVIEW" as const;
+
 export function optionsFor(task: LabTask, directories: WorkerDirectories): LabRunOptions {
   return {
     jobId: task.jobId,
     taskPath: task.taskPath ?? "",
+    stopBefore: QUEUE_STOPS_BEFORE,
     ...(task.subject !== undefined && { subject: task.subject }),
     ...(task.teacher !== undefined && { teacher: task.teacher }),
     ...(task.variant !== undefined && { variant: task.variant }),

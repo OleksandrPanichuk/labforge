@@ -93,8 +93,8 @@ test("passes an answer on to the lab that was waiting", () => {
   expect(optionsFor({ jobId: "job_1", answer: "Варіант 7" }, dirs()).answer).toBe("Варіант 7");
 });
 
-test("runs to the end of the machine rather than stopping for review", () => {
-  expect(optionsFor({ jobId: "job_1" }, dirs()).stopBefore).toBeUndefined();
+test("stops at the review the student owes it, like an inline run", () => {
+  expect(optionsFor({ jobId: "job_1" }, dirs()).stopBefore).toBe("HUMAN_REVIEW");
 });
 
 test.skipIf(!available)("runs a queued lab through the whole wiring", async () => {

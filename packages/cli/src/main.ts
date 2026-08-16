@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createLogger } from "@labforge/logger";
 import { createLabQueue } from "@labforge/queue";
 import { labRun, type ParsedArgs, parseArgs } from "./lab-run";
@@ -10,10 +10,12 @@ const EXIT = { done: 0, failed: 1, paused: 2 };
 async function enqueue(options: ParsedArgs): Promise<number> {
   const queue = createLabQueue();
 
+  let queued: boolean;
+
   try {
-    await queue.enqueue({
+    queued = await queue.enqueue({
       jobId: options.jobId,
-      ...(options.taskPath !== "" && { taskPath: options.taskPath }),
+      ...(options.taskPath !== "" && { taskPath: resolve(options.taskPath) }),
       ...(options.subject !== undefined && { subject: options.subject }),
       ...(options.teacher !== undefined && { teacher: options.teacher }),
       ...(options.variant !== undefined && { variant: options.variant }),
@@ -22,6 +24,12 @@ async function enqueue(options: ParsedArgs): Promise<number> {
     });
   } finally {
     await queue.close();
+  }
+
+  if (!queued) {
+    logger.warn({ jobId: options.jobId }, "that lab is already in the queue; nothing to do");
+
+    return EXIT.done;
   }
 
   logger.info({ jobId: options.jobId }, "the lab is in the queue; run lab:worker to work it off");
